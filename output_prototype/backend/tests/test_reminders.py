@@ -1,0 +1,1 @@
+# Tests for reminders endpoints can be added here
