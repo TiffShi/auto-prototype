@@ -1,27 +1,53 @@
 from langgraph.graph import StateGraph, END
 from core.state import AutoPrototypeState
 from agents.pm_agent import product_manager_node
-from agents.dev_agents import backend_agent_node, frontend_agent_node, file_saver_node
+from agents.dev_agents import backend_agent_node, frontend_agent_node, file_saver_node, debugger_node
+
+# --- ROUTER FUNCTION ---
+def route_after_debugger(state: AutoPrototypeState):
+    """Decides where to go next based on the debugger's findings."""
+    MAX_ITERATIONS = 3
+    
+    # 1. If QA passed it (error list was cleared)
+    if not state.get("error_messages"):
+        print("-> Router: QA Passed. Proceeding to save.")
+        return "saver"
+        
+    # 2. If QA failed, but we hit the retry limit
+    if state.get("iteration_count", 0) >= MAX_ITERATIONS:
+        print(f"-> Router: Max iterations ({MAX_ITERATIONS}) reached. Forcing save with known bugs.")
+        return "saver"
+        
+    # 3. If QA failed and we still have retries left
+    print("-> Router: Bugs found. Sending feedback back to Backend Developer.")
+    return "backend"
 
 def create_graph():
-    # 1. Initialize the Graph
     workflow = StateGraph(AutoPrototypeState)
 
-    # 2. Add the specialized roles as Nodes
+    # Add all nodes
     workflow.add_node("pm", product_manager_node)
     workflow.add_node("backend", backend_agent_node)
     workflow.add_node("frontend", frontend_agent_node)
-    workflow.add_node("saver", file_saver_node) # Added the saver node
+    workflow.add_node("debugger", debugger_node)
+    workflow.add_node("saver", file_saver_node)
 
-    # 3. Define the Flow (Edges)
-    # The journey starts with the User's Idea at the PM
+    # Standard linear flow
     workflow.set_entry_point("pm")
-    
-    # Linear Flow: PM -> Backend -> Frontend -> Saver -> END
     workflow.add_edge("pm", "backend")
     workflow.add_edge("backend", "frontend")
-    workflow.add_edge("frontend", "saver")
+    workflow.add_edge("frontend", "debugger")
+    
+    # Conditional loop logic
+    workflow.add_conditional_edges(
+        "debugger",
+        route_after_debugger,
+        {
+            "backend": "backend", # Loop back to start fixing
+            "saver": "saver"      # Proceed to save files
+        }
+    )
+    
     workflow.add_edge("saver", END)
 
-    # 4. Compile the graph
     return workflow.compile()

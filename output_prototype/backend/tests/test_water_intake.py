@@ -1,1 +1,0 @@
-# Tests for water intake endpoints can be added here
