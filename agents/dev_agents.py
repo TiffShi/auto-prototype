@@ -35,7 +35,7 @@ def backend_agent_node(state: AutoPrototypeState) -> dict:
 
     if is_fix_mode:
         system_prompt = "You are a Senior Backend Engineer fixing bugs."
-        human_prompt = f"""TASK: SURGICAL BUG FIX (DIFF STRATEGY).
+        human_prompt = """TASK: SURGICAL BUG FIX (DIFF STRATEGY).
         You must fix the bugs identified by the QA Debugger in the existing code.
         
         CRITICAL: DO NOT OUTPUT THE FULL CODEBASE.
@@ -53,7 +53,23 @@ def backend_agent_node(state: AutoPrototypeState) -> dict:
         {previous_code}
         
         DEBUGGER FEEDBACK:
-        {state["error_messages"][-1]}"""
+        {feedback}
+        
+        CRITICAL DOMAIN INSTRUCTION: You are the Backend Engineer. You must ONLY address the issues listed under "BACKEND ISSUES" in the debugger feedback. Ignore all "FRONTEND ISSUES".
+        """
+        
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", system_prompt), 
+            ("human", human_prompt)
+        ])
+        
+        response = (prompt | llm).invoke({
+            "previous_code": previous_code,
+            "feedback": state["error_messages"][-1]
+        })
+        new_code = apply_patches(previous_code, response.content)
+        return {"backend_code": new_code}
+        
     else:
         system_prompt = """You are a Senior Backend Engineer. Output the full FastAPI source code.
         Use this exact format for every file:
@@ -61,21 +77,18 @@ def backend_agent_node(state: AutoPrototypeState) -> dict:
         ```python
         [CODE]
         ```"""
-        human_prompt = f"Plan: {state.get('architecture_plan', '')}"
+        human_prompt = "Plan:\n{plan}"
 
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt), 
-        ("human", human_prompt)
-    ])
-    
-    response = (prompt | llm).invoke({})
-    
-    # NEW: Apply the diff patch if we are in fix mode
-    if is_fix_mode:
-        new_code = apply_patches(previous_code, response.content)
-        return {"backend_code": new_code}
-    else:
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", system_prompt), 
+            ("human", human_prompt)
+        ])
+        
+        response = (prompt | llm).invoke({
+            "plan": state.get('architecture_plan', '')
+        })
         return {"backend_code": response.content}
+
 
 # --- FRONTEND AGENT ---
 def frontend_agent_node(state: AutoPrototypeState) -> dict:
@@ -88,7 +101,7 @@ def frontend_agent_node(state: AutoPrototypeState) -> dict:
 
     if is_fix_mode:
         system_prompt = "You are a Senior Frontend Engineer fixing bugs."
-        human_prompt = f"""TASK: SURGICAL BUG FIX (DIFF STRATEGY).
+        human_prompt = """TASK: SURGICAL BUG FIX (DIFF STRATEGY).
         You must fix the bugs identified by the QA Debugger in the existing frontend code.
         
         CRITICAL: DO NOT OUTPUT THE FULL CODEBASE.
@@ -103,13 +116,30 @@ def frontend_agent_node(state: AutoPrototypeState) -> dict:
         >>>
 
         BACKEND API REFERENCE (Do not modify backend code):
-        {state.get("backend_code", "No backend code available.")}
+        {backend_code}
         
         PREVIOUS FRONTEND CODE:
         {previous_code}
         
         DEBUGGER FEEDBACK:
-        {state["error_messages"][-1]}"""
+        {feedback}
+        
+        CRITICAL DOMAIN INSTRUCTION: You are the Frontend Engineer. You must ONLY address the issues listed under "FRONTEND ISSUES" in the debugger feedback. Ignore all "BACKEND ISSUES".
+        """
+        
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", system_prompt), 
+            ("human", human_prompt)
+        ])
+        
+        response = (prompt | llm).invoke({
+            "backend_code": state.get("backend_code", "No backend code available."),
+            "previous_code": previous_code,
+            "feedback": state["error_messages"][-1]
+        })
+        new_code = apply_patches(previous_code, response.content)
+        return {"frontend_code": new_code}
+        
     else:
         system_prompt = """You are a Senior Frontend Engineer. Output the full React source code.
         Use this exact format for every file (including src/ and public/):
@@ -118,21 +148,19 @@ def frontend_agent_node(state: AutoPrototypeState) -> dict:
         [CODE]
         ```
         CRITICAL: Ensure your frontend makes API calls that exactly match the backend routes."""
-        human_prompt = f"""Plan:\n{state.get('architecture_plan', '')}\n\nBackend Source Code:\n{state.get("backend_code", "No backend code available.")}"""
+        human_prompt = "Plan:\n{plan}\n\nBackend Source Code:\n{backend_code}"
     
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt), 
-        ("human", human_prompt)
-    ])
-    
-    response = (prompt | llm).invoke({})
-    
-    # NEW: Apply the diff patch if we are in fix mode
-    if is_fix_mode:
-        new_code = apply_patches(previous_code, response.content)
-        return {"frontend_code": new_code}
-    else:
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", system_prompt), 
+            ("human", human_prompt)
+        ])
+        
+        response = (prompt | llm).invoke({
+            "plan": state.get('architecture_plan', ''),
+            "backend_code": state.get("backend_code", "No backend code available.")
+        })
         return {"frontend_code": response.content}
+
 
 # --- DEBUGGER AGENT ---
 def debugger_node(state: AutoPrototypeState) -> dict:
@@ -149,7 +177,17 @@ def debugger_node(state: AutoPrototypeState) -> dict:
     4. Endpoint Alignment: Frontend fetch/axios calls must match backend routes.
 
     If everything is perfect, output exactly: 'VERDICT: PASS'.
-    If any rule is broken, output 'VERDICT: FAIL' followed by explicit instructions on what file to fix and how to fix it."""
+    
+    If any rule is broken, output 'VERDICT: FAIL' followed by explicit instructions on what file to fix and how to fix it. 
+    
+    CRITICAL FORMATTING: You must strictly categorize your feedback into two distinct sections:
+    
+    BACKEND ISSUES:
+    [List any Python/FastAPI bugs here]
+    
+    FRONTEND ISSUES:
+    [List any React/Javascript/package.json bugs here]
+    """
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", system_prompt),
@@ -173,6 +211,7 @@ def debugger_node(state: AutoPrototypeState) -> dict:
             "error_messages": state.get("error_messages", []) + [content],
             "iteration_count": current_iterations + 1
         }
+
 
 # --- FILE SAVER ---
 def file_saver_node(state: AutoPrototypeState) -> dict:
@@ -200,7 +239,7 @@ def file_saver_node(state: AutoPrototypeState) -> dict:
     if state.get("error_messages"):
         print("--- WARNING: Unresolved bugs remain. Writing bug report. ---")
         with open(f"{base_dir}/unresolved_bugs.md", "w") as f:
-            f.write("# 🚨 Unresolved Bugs Report\n\n")
+            f.write("#Unresolved Bugs Report\n\n")
             f.write("The AI workflow reached the maximum iteration limit. The following issues could not be resolved by the agents:\n\n")
             f.write(f"## Final QA Feedback:\n{state['error_messages'][-1]}\n")
             

@@ -13,10 +13,13 @@ class SandboxExecutor:
         
         # The context must be the project root so Docker can access 'output_prototype'
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+        output_dir = os.path.join(project_root, "output_prototype")
+
         dockerfile_path = os.path.join(project_root, "sandbox", "Dockerfile")
         
         self.client.images.build(
-            path=project_root,
+            path=output_dir,
             dockerfile=dockerfile_path,
             tag=self.image_name,
             rm=True 
@@ -49,7 +52,7 @@ class SandboxExecutor:
             print("Backend API: http://localhost:8000/docs")
             print("Frontend UI: http://localhost:3000")
             print(f"Container ID: {container.id[:10]}")
-            print("To stop: docker stop autoprototype-live && docker rm autoprototype-live")
+            print("To stop: docker rm -f autoprototype-live")
             
             return container
 

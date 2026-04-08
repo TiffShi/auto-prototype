@@ -12,15 +12,15 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # 1. Copy dependency files FIRST to leverage Docker caching
-COPY output_prototype/backend/requirements.txt ./backend/
-COPY output_prototype/frontend/package.json ./frontend/
+COPY backend/requirements.txt ./backend/
+COPY frontend/package.json ./frontend/
 
 # 2. Pre-bake dependencies (This makes boot times nearly instant)
 RUN cd backend && pip install --no-cache-dir -r requirements.txt
 RUN cd frontend && npm install
 
 # 3. Copy the rest of the generated source code
-COPY output_prototype/ ./
+COPY ./ ./
 
 EXPOSE 8000 3000
 
