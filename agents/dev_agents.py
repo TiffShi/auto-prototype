@@ -1,8 +1,9 @@
 import os
 import re
 from core.state import AutoPrototypeState
-from langchain_openai import ChatOpenAI
+from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
+from sandbox.executor import SandboxExecutor
 
 # --- DIFF UTILITY FUNCTION ---
 def apply_patches(original_code: str, patch_text: str) -> str:
@@ -28,8 +29,8 @@ def apply_patches(original_code: str, patch_text: str) -> str:
 def backend_agent_node(state: AutoPrototypeState) -> dict:
     iteration = state.get('iteration_count', 0)
     print(f"--- Backend Agent Active (Iteration {iteration}) ---")
-    llm = ChatOpenAI(model="gpt-4o", temperature=0.1)
-    
+    llm = ChatAnthropic(model="claude-sonnet-4-6", temperature=0.1)    
+
     is_fix_mode = iteration > 0
     previous_code = state.get("backend_code", "")
 
@@ -94,8 +95,8 @@ def backend_agent_node(state: AutoPrototypeState) -> dict:
 def frontend_agent_node(state: AutoPrototypeState) -> dict:
     iteration = state.get('iteration_count', 0)
     print(f"--- Frontend Agent Active (Iteration {iteration}) ---")
-    llm = ChatOpenAI(model="gpt-4o", temperature=0.1)
-    
+    llm = ChatAnthropic(model="claude-sonnet-4-6", temperature=0.1)    
+
     is_fix_mode = iteration > 0
     previous_code = state.get("frontend_code", "")
 
@@ -161,47 +162,81 @@ def frontend_agent_node(state: AutoPrototypeState) -> dict:
         })
         return {"frontend_code": response.content}
 
+# --- NEW UTILITY: Extracted from your old file_saver_node ---
+def write_files_to_disk(state: AutoPrototypeState, base_dir="output_prototype"):
+    """Parses code blocks and writes them to the output directory so Docker can build them."""
+    def parse_and_write(content, sub_folder):
+        pattern = r"###\s+`?([\w\./_-]+)`?\s+```\w*\s+(.*?)\s+```"
+        blocks = re.findall(pattern, content, re.DOTALL)
+        for file_path, code in blocks:
+            # FIX: Prevent double-nesting if the LLM includes 'backend/' or 'frontend/' in the file path
+            clean_path = file_path.strip()
+            if clean_path.startswith(f"{sub_folder}/"):
+                clean_path = clean_path[len(sub_folder)+1:]
+                
+            full_path = os.path.join(base_dir, sub_folder, clean_path)
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+            with open(full_path, "w") as f:
+                f.write(code.strip())
+
+    if state.get("backend_code"):
+        parse_and_write(state["backend_code"], "backend")
+    if state.get("frontend_code"):
+        parse_and_write(state["frontend_code"], "frontend")
+
+# --- NEW: EXECUTION NODE ---
+def execution_node(state: AutoPrototypeState) -> dict:
+    print("--- Execution Node: Testing Code in Sandbox ---")
+    
+    # 1. Write the current state to disk so Docker can see it
+    write_files_to_disk(state)
+    
+    # 2. Run the sandbox test
+    sandbox = SandboxExecutor()
+    logs = sandbox.test_prototype_and_get_logs()
+    
+    return {"execution_logs": logs}
 
 # --- DEBUGGER AGENT ---
 def debugger_node(state: AutoPrototypeState) -> dict:
-    print("--- Debugger Agent Active ---")
-    llm = ChatOpenAI(model="gpt-4o", temperature=0.1)
-    
+    print("--- Debugger Agent Active (Analyzing Logs)---")
+    llm = ChatAnthropic(model="claude-sonnet-4-6", temperature=0.1)    
+
     system_prompt = """You are a QA Reviewer and Tech Lead. 
-    Review the Architecture Plan, Backend Code, and Frontend Code.
+    Review the Architecture Plan, Backend Code, Frontend Code, and the RUNTIME LOGS from the Docker Sandbox.
 
-    CRITICAL CHECKLIST - You must verify the following before passing:
-    1. Cross-File Imports: Verify functions like `get_db` are defined before being imported.
-    2. Dependency Versions: `react-scripts` must be at least `5.0.0` in package.json.
-    3. Standard Libraries: `sqlite3` must NOT be in requirements.txt.
-    4. Endpoint Alignment: Frontend fetch/axios calls must match backend routes.
+CRITICAL CHECKLIST - You must verify the following:
+    1. Did the build fail? (Check logs for pip or npm install errors).
+    2. Did the backend crash? (Check logs for Python tracebacks, ImportErrors, or syntax errors).
+    3. Did the frontend crash? (Check logs for React compilation errors).
 
-    If everything is perfect, output exactly: 'VERDICT: PASS'.
-    
-    If any rule is broken, output 'VERDICT: FAIL' followed by explicit instructions on what file to fix and how to fix it. 
-    
+    If the logs show clear startup success and no crashes, output exactly: 'VERDICT: PASS'.
+
+    If there is a crash or error in the logs, output 'VERDICT: FAIL' followed by explicit instructions on what file to fix and how to fix it based on the stack trace.
+
     CRITICAL FORMATTING: You must strictly categorize your feedback into two distinct sections:
     
     BACKEND ISSUES:
-    [List any Python/FastAPI bugs here]
+    [List any Python/FastAPI bugs based on the logs here]
     
     FRONTEND ISSUES:
-    [List any React/Javascript/package.json bugs here]
+    [List any React/Javascript/package.json bugs based on the logs here]
     """
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", system_prompt),
-        ("human", "Plan:\n{plan}\n\nBackend:\n{backend}\n\nFrontend:\n{frontend}")
+        ("human", "Plan:\n{plan}\n\nBackend:\n{backend}\n\nFrontend:\n{frontend}\n\nRUNTIME LOGS:\n{logs}")
     ])
     
     response = (prompt | llm).invoke({
         "plan": state["architecture_plan"],
         "backend": state.get("backend_code", ""),
-        "frontend": state.get("frontend_code", "")
+        "frontend": state.get("frontend_code", ""),
+        "logs": state.get("execution_logs", "No logs available.")
     })
     
     content = response.content
-    print(f"Debugger Output: {content[:100]}...")
+    print(f"Debugger Output: {content[:150]}...")
     
     if "VERDICT: PASS" in content.upper():
         return {"error_messages": []}
@@ -213,25 +248,12 @@ def debugger_node(state: AutoPrototypeState) -> dict:
         }
 
 
-# --- FILE SAVER ---
+# --- UPDATED: FILE SAVER ---
 def file_saver_node(state: AutoPrototypeState) -> dict:
-    print("--- Parsing and Distributing All Files ---")
-    base_dir = "output_prototype"
+    print("--- Finalizing All Files ---")
     
-    def parse_and_write(content, sub_folder):
-        pattern = r"###\s+`?([\w\./_-]+)`?\s+```\w*\s+(.*?)\s+```"
-        blocks = re.findall(pattern, content, re.DOTALL)
-        
-        for file_path, code in blocks:
-            full_path = os.path.join(base_dir, sub_folder, file_path.strip())
-            os.makedirs(os.path.dirname(full_path), exist_ok=True)
-            with open(full_path, "w") as f:
-                f.write(code.strip())
-
-    if state.get("backend_code"):
-        parse_and_write(state["backend_code"], "backend")
-    if state.get("frontend_code"):
-        parse_and_write(state["frontend_code"], "frontend")
+    # Files are already written by execution_node, just save the metadata
+    base_dir = "output_prototype"
     if state.get("architecture_plan"):
         with open(f"{base_dir}/architecture_plan.md", "w") as f:
             f.write(state["architecture_plan"])
@@ -240,7 +262,6 @@ def file_saver_node(state: AutoPrototypeState) -> dict:
         print("--- WARNING: Unresolved bugs remain. Writing bug report. ---")
         with open(f"{base_dir}/unresolved_bugs.md", "w") as f:
             f.write("#Unresolved Bugs Report\n\n")
-            f.write("The AI workflow reached the maximum iteration limit. The following issues could not be resolved by the agents:\n\n")
             f.write(f"## Final QA Feedback:\n{state['error_messages'][-1]}\n")
             
     return state

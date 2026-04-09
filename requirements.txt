@@ -1,5 +1,5 @@
 langchain
-langchain-openai  # Or langchain-anthropic, depending on your model choice
+langchain-anthropic  # Or langchain-openai, depending on your model choice
 langgraph
 docker            # Python Docker SDK to spin up containers dynamically
 python-dotenv

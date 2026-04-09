@@ -9,7 +9,9 @@ def run_autoprototype():
     
     # Define the starting state with a test idea
     initial_state = {
-        "user_idea": "I want a simple app that tracks my daily water intake and sends me a reminder.",
+        "user_idea": """I want a simple app that tracks my daily water intake and sends me a reminder. 
+        There should be authentication so only logged in users can interface with the application.
+        There is no database so just use local mock data in a json file for login info""",
         "error_messages": [],
         "iteration_count": 0
     }

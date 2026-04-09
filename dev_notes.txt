@@ -1,0 +1,23 @@
+Common manual fixes needed:
+- index.html in the public folder instead of the frontend root
+- It seems like the code is written fine, it's the incorrect setup of files or mismatched ports that cause issues
+
+Other issues:
+- package.json didn't include the host part: "start": "vite --host 0.0.0.0",
+
+Other Considerations:
+- prototype12: When a user requests login info, a seed script needs to be manually run to get the bcrypt hashes
+(The agent accurately makes the seed script, but cannot run it; it only needs to be run once.)
+However, there was no register endpoint specified in prototype12, so that's why the seeding script was needed 
+
+Possible Solutions:
+- Getting a computer vision agent to act as a user and click links on the website (too expensive and too complicated for a student project)
+- If the same 2 manual fixes are still needed after more testing, then refine the prompt (should be generalized to the best of your ability and not hardcoded rules)
+
+Trials and Tribulations:
+- Initially used GPT4-o; however, we changed to claude-3-5-sonnet for the agents since the model seems to be better at reasoning and coding,
+However, it is significantly more expensive, and the feedback loop was changed so GPT4-o might work just as well (will possibly switch back in the future
+after some more testing)
+- The debugger agent was originally evaluating the code statically; it just checked if the code written looked correct. We changed it to evaluate dynamically
+by running the sandbox Docker after every iteration and giving the Docker logs to the Debugger agent.
+- We added a lot of specific, hardcoded rules; however, it caused the agents to perform worse, so they were removed and more generalized

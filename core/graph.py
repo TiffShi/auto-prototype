@@ -1,7 +1,7 @@
 from langgraph.graph import StateGraph, END
 from core.state import AutoPrototypeState
 from agents.pm_agent import product_manager_node
-from agents.dev_agents import backend_agent_node, frontend_agent_node, file_saver_node, debugger_node
+from agents.dev_agents import backend_agent_node, frontend_agent_node, file_saver_node, debugger_node, execution_node
 
 # --- ROUTER FUNCTION ---
 def route_after_debugger(state: AutoPrototypeState):
@@ -29,6 +29,7 @@ def create_graph():
     workflow.add_node("pm", product_manager_node)
     workflow.add_node("backend", backend_agent_node)
     workflow.add_node("frontend", frontend_agent_node)
+    workflow.add_node("executor", execution_node)
     workflow.add_node("debugger", debugger_node)
     workflow.add_node("saver", file_saver_node)
 
@@ -36,7 +37,8 @@ def create_graph():
     workflow.set_entry_point("pm")
     workflow.add_edge("pm", "backend")
     workflow.add_edge("backend", "frontend")
-    workflow.add_edge("frontend", "debugger")
+    workflow.add_edge("frontend", "executor")
+    workflow.add_edge("executor", "debugger")
     
     # Conditional loop logic
     workflow.add_conditional_edges(

@@ -1,12 +1,12 @@
 from core.state import AutoPrototypeState
-from langchain_openai import ChatOpenAI
+from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
 
 def product_manager_node(state: AutoPrototypeState) -> dict:
     print("--- Product Manager Agent Active ---")
     
-    # Initialize the LLM (Make sure your OPENAI_API_KEY is in your .env file)
-    llm = ChatOpenAI(model="gpt-4o", temperature=0.2)
+    # Initialize the LLM (Make sure your ANTHROPIC_API_KEY is in your .env file)
+    llm = ChatAnthropic(model="claude-sonnet-4-6", temperature=0.2)
     
     # Define the instructions for the PM
     system_prompt = """You are an expert Software Product Manager. 
