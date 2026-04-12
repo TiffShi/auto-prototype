@@ -41,7 +41,7 @@ class SandboxExecutor:
                 command=startup_command,
                 detach=True,
                 cap_drop=["ALL"], # SECURITY: Drops root capabilities to prevent container escape
-                ports={'8000/tcp': 8000, '5173/tcp': 3000},
+                ports={'8000/tcp': 8000, '3000/tcp': 3000},
                 name="autoprototype-live"
             )
             

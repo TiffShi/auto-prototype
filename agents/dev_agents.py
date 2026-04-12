@@ -77,7 +77,11 @@ def backend_agent_node(state: AutoPrototypeState) -> dict:
         ### app/path/to/file.py
         ```python
         [CODE]
-        ```"""
+        ```
+        CRITICAL RULES:
+        1. BOUNDARY LIMIT: You are strictly confined to backend logic. You are only authorized to output Python files (.py) and requirements.txt. 
+        2. IMPORT RULE: The server will be executed from the root 'backend' folder using `uvicorn app.main:app`. Therefore, ALL internal Python imports MUST be absolute and start with the `app.` prefix (e.g., `from app.routers import x`).
+        3. NO INFRASTRUCTURE: Do not generate any deployment or container configuration files. The execution environment is managed externally."""
         human_prompt = "Plan:\n{plan}"
 
         prompt = ChatPromptTemplate.from_messages([
@@ -148,7 +152,11 @@ def frontend_agent_node(state: AutoPrototypeState) -> dict:
         ```javascript
         [CODE]
         ```
-        CRITICAL: Ensure your frontend makes API calls that exactly match the backend routes."""
+        CRITICAL RULES:
+        1. BOUNDARY LIMIT: You are strictly confined to frontend web logic. You are only authorized to output React components (.jsx/.js), styles (.css), Vite configurations, and standard web assets (index.html, package.json) index.html should only be in the frontend directory and not the public directory if it is using vite.
+        2. EXECUTION RULE: The frontend will be executed inside a container via `npm start`. You MUST include exactly `"start": "vite --host 0.0.0.0 --port 3000"` in the scripts section of your `package.json`.
+        3. API CONNECTION: The FastAPI backend will be running on port 8000. You MUST configure `vite.config.js` to proxy `/api` requests to `http://localhost:8000` to avoid CORS issues."""
+        
         human_prompt = "Plan:\n{plan}\n\nBackend Source Code:\n{backend_code}"
     
         prompt = ChatPromptTemplate.from_messages([
@@ -166,7 +174,7 @@ def frontend_agent_node(state: AutoPrototypeState) -> dict:
 def write_files_to_disk(state: AutoPrototypeState, base_dir="output_prototype"):
     """Parses code blocks and writes them to the output directory so Docker can build them."""
     def parse_and_write(content, sub_folder):
-        pattern = r"###\s+`?([\w\./_-]+)`?\s+```\w*\s+(.*?)\s+```"
+        pattern = r"###\s+`?([\w\./_-]+\.\w+)`?\s+```\w*\n(.*?)```"
         blocks = re.findall(pattern, content, re.DOTALL)
         for file_path, code in blocks:
             # FIX: Prevent double-nesting if the LLM includes 'backend/' or 'frontend/' in the file path

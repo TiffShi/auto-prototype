@@ -1,0 +1,3683 @@
+=== AUTOPROTOTYPE DEBUG LOG ===
+
+
+==================================================
+NODE: PM
+==================================================
+
+--- ARCHITECTURE_PLAN ---
+# Temperature Converter – Architecture Plan
+
+---
+
+## 1. Product Overview
+
+A lightweight web app where a user inputs a numeric temperature value, selects a source scale and a target scale, submits the form, and receives the precise converted value — calculated server-side.
+
+---
+
+## 2. Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | React (Vite) |
+| Backend | FastAPI (Python) |
+| HTTP Client | Axios |
+| Styling | CSS Modules |
+| Package Mgmt | pip + npm |
+
+---
+
+## 3. Functional Requirements
+
+### FR-1 — User Input
+- A numeric text field accepts the temperature value (integers and decimals, including negatives)
+- Two dropdowns: **From Scale** and **To Scale**, each containing `Celsius`, `Fahrenheit`, `Kelvin`
+- A **Convert** button triggers the API call
+
+### FR-2 — Conversion Logic (Backend)
+- All conversions route through Kelvin as the canonical intermediate unit
+- Supported pairs: C↔F, C↔K, F↔K (and same-scale identity)
+- Returns a JSON response with the result as a full-precision float
+- Validates input: rejects non-numeric values and temperatures below absolute zero
+
+### FR-3 — Result Display
+- The converted result is displayed clearly below the form
+- Shows: `{input} °{FromScale} = {result} °{ToScale}`
+- Handles and displays backend validation errors gracefully
+
+### FR-4 — Edge Cases
+- Same input/output scale → returns the original value
+- Absolute zero enforcement (e.g., reject < −273.15 °C)
+- Empty or non-numeric input → frontend blocks submission before API call
+
+---
+
+## 4. API Design
+
+### `POST /convert`
+
+**Request Body**
+```json
+{
+  "value": 100.0,
+  "from_scale": "Celsius",
+  "to_scale": "Fahrenheit"
+}
+```
+
+**Success Response** `200 OK`
+```json
+{
+  "result": 212.0,
+  "from_scale": "Celsius",
+  "to_scale": "Fahrenheit",
+  "input_value": 100.0
+}
+```
+
+**Error Response** `422 Unprocessable Entity`
+```json
+{
+  "detail": "Temperature is below absolute zero for the given scale."
+}
+```
+
+---
+
+## 5. Conversion Logic Rules
+
+```
+To convert any value → first convert to Kelvin → then convert to target:
+
+Celsius    → Kelvin:     K = C + 273.15
+Fahrenheit → Kelvin:     K = (F + 459.67) × 5/9
+Kelvin     → Kelvin:     K = K
+
+Kelvin → Celsius:        C = K − 273.15
+Kelvin → Fahrenheit:     F = K × 9/5 − 459.67
+Kelvin → Kelvin:         K = K
+
+Absolute zero in Kelvin: K >= 0
+```
+
+---
+
+## 6. File Structure
+
+```
+temperature-converter/
+│
+├── backend/
+│   ├── main.py                  # FastAPI app entry point, registers router
+│   ├── routers/
+│   │   └── convert.py           # POST /convert endpoint
+│   ├── services/
+│   │   └── conversion.py        # Pure conversion logic & absolute zero validation
+│   ├── models/
+│   │   └── schemas.py           # Pydantic request/response models
+│   └── requirements.txt         # fastapi, uvicorn, pydantic
+│
+└── frontend/
+    ├── index.html
+    ├── package.json
+    ├── vite.config.js
+    └── src/
+        ├── main.jsx             # React entry point
+        ├── App.jsx              # Root component, holds state
+        ├── api/
+        │   └── convertApi.js    # Axios call to POST /convert
+        ├── components/
+        │   ├── ConverterForm.jsx # Input field + two dropdowns + button
+        │   ├── ResultDisplay.jsx # Shows the formatted result or error
+        │   └── ScaleDropdown.jsx # Reusable dropdown for scale selection
+        └── styles/
+            ├── App.module.css
+            ├── ConverterForm.module.css
+            └── ResultDisplay.module.css
+```
+
+---
+
+## 7. Component Responsibilities
+
+### `App.jsx`
+- Owns state: `inputValue`, `fromScale`, `toScale`, `result`, `error`, `isLoading`
+- Passes handlers down to `ConverterForm`
+- Passes `result` and `error` to `ResultDisplay`
+
+### `ConverterForm.jsx`
+- Renders the numeric input, two `ScaleDropdown` instances, and the Convert button
+- Performs client-side validation (empty, non-numeric) before calling the API
+- Calls `convertApi.js` on submit and lifts result/error up to `App`
+
+### `ScaleDropdown.jsx`
+- Props: `label`, `value`, `onChange`
+- Renders a `<select>` with the three scale options
+
+### `ResultDisplay.jsx`
+- Props: `result`, `error`, `isLoading`
+- Conditionally renders a loading state, error message, or formatted result string
+
+### `convertApi.js`
+- Single exported async function `convertTemperature({ value, fromScale, toScale })`
+- Returns the parsed response data or throws a structured error
+
+---
+
+## 8. Data Flow (End-to-End)
+
+```
+User fills form
+      │
+      ▼
+ConverterForm validates input (client-side)
+      │
+      ▼
+convertApi.js → POST /convert → FastAPI router (convert.py)
+                                        │
+                                        ▼
+                               schemas.py validates Pydantic model
+                                        │
+                                        ▼
+                               conversion.py runs math + absolute zero check
+                                        │
+                                        ▼
+                               JSON response returned
+      │
+      ▼
+App.jsx updates state → ResultDisplay renders output
+```
+
+---
+
+## 9. Development Milestones
+
+| # | Milestone | Deliverable |
+|---|---|---|
+| 1 | Backend core | `conversion.py` with all 6 conversion paths + validation |
+| 2 | Backend API | Pydantic schemas + `/convert` endpoint wired up |
+| 3 | Frontend shell | Vite/React scaffold + `ConverterForm` renders correctly |
+| 4 | API integration | `convertApi.js` connected, result flows to `ResultDisplay` |
+| 5 | Error handling | Absolute zero errors + network errors displayed in UI |
+| 6 | Polish | Loading states, same-scale hint, CSS styling |
+
+
+==================================================
+NODE: BACKEND
+==================================================
+
+--- BACKEND_CODE ---
+### app/main.py
+```python
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from app.routers import convert
+
+app = FastAPI(
+    title="Temperature Converter API",
+    description="A simple API for converting temperatures between Celsius, Fahrenheit, and Kelvin.",
+    version="1.0.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(convert.router)
+
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+```
+
+### app/routers/convert.py
+```python
+from fastapi import APIRouter, HTTPException
+from app.models.schemas import ConversionRequest, ConversionResponse
+from app.services.conversion import convert_temperature, AbsoluteZeroError, InvalidScaleError
+
+router = APIRouter()
+
+
+@router.post("/convert", response_model=ConversionResponse)
+def convert(request: ConversionRequest):
+    """
+    Convert a temperature value from one scale to another.
+
+    Supported scales: Celsius, Fahrenheit, Kelvin
+
+    Raises 422 if the temperature is below absolute zero or if an invalid scale is provided.
+    """
+    try:
+        result = convert_temperature(
+            value=request.value,
+            from_scale=request.from_scale,
+            to_scale=request.to_scale,
+        )
+    except AbsoluteZeroError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except InvalidScaleError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    return ConversionResponse(
+        result=result,
+        from_scale=request.from_scale,
+        to_scale=request.to_scale,
+        input_value=request.value,
+    )
+```
+
+### app/models/schemas.py
+```python
+from pydantic import BaseModel, field_validator
+from typing import Literal
+
+Scale = Literal["Celsius", "Fahrenheit", "Kelvin"]
+
+
+class ConversionRequest(BaseModel):
+    value: float
+    from_scale: Scale
+    to_scale: Scale
+
+    @field_validator("value")
+    @classmethod
+    def value_must_be_finite(cls, v: float) -> float:
+        import math
+        if math.isnan(v) or math.isinf(v):
+            raise ValueError("Temperature value must be a finite number.")
+        return v
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "value": 100.0,
+                    "from_scale": "Celsius",
+                    "to_scale": "Fahrenheit",
+                }
+            ]
+        }
+    }
+
+
+class ConversionResponse(BaseModel):
+    result: float
+    from_scale: Scale
+    to_scale: Scale
+    input_value: float
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "result": 212.0,
+                    "from_scale": "Celsius",
+                    "to_scale": "Fahrenheit",
+                    "input_value": 100.0,
+                }
+            ]
+        }
+    }
+```
+
+### app/services/conversion.py
+```python
+"""
+Pure conversion logic for temperature scales.
+
+All conversions route through Kelvin as the canonical intermediate unit:
+
+  Celsius    → Kelvin:  K = C + 273.15
+  Fahrenheit → Kelvin:  K = (F + 459.67) × 5/9
+  Kelvin     → Kelvin:  K = K
+
+  Kelvin → Celsius:     C = K − 273.15
+  Kelvin → Fahrenheit:  F = K × 9/5 − 459.67
+  Kelvin → Kelvin:      K = K
+
+Absolute zero constraint: K >= 0
+"""
+
+ABSOLUTE_ZERO_KELVIN = 0.0
+ABSOLUTE_ZERO_CELSIUS = -273.15
+ABSOLUTE_ZERO_FAHRENHEIT = -459.67
+
+SUPPORTED_SCALES = {"Celsius", "Fahrenheit", "Kelvin"}
+
+
+class AbsoluteZeroError(ValueError):
+    """Raised when the input temperature is below absolute zero."""
+    pass
+
+
+class InvalidScaleError(ValueError):
+    """Raised when an unsupported temperature scale is provided."""
+    pass
+
+
+def _to_kelvin(value: float, from_scale: str) -> float:
+    """Convert a temperature value from the given scale to Kelvin."""
+    if from_scale == "Celsius":
+        return value + 273.15
+    elif from_scale == "Fahrenheit":
+        return (value + 459.67) * 5.0 / 9.0
+    elif from_scale == "Kelvin":
+        return value
+    else:
+        raise InvalidScaleError(
+            f"Unsupported scale '{from_scale}'. Must be one of: {', '.join(sorted(SUPPORTED_SCALES))}."
+        )
+
+
+def _from_kelvin(kelvin: float, to_scale: str) -> float:
+    """Convert a temperature value from Kelvin to the target scale."""
+    if to_scale == "Celsius":
+        return kelvin - 273.15
+    elif to_scale == "Fahrenheit":
+        return kelvin * 9.0 / 5.0 - 459.67
+    elif to_scale == "Kelvin":
+        return kelvin
+    else:
+        raise InvalidScaleError(
+            f"Unsupported scale '{to_scale}'. Must be one of: {', '.join(sorted(SUPPORTED_SCALES))}."
+        )
+
+
+def _validate_absolute_zero(value: float, from_scale: str) -> None:
+    """
+    Validate that the input temperature is not below absolute zero.
+
+    Raises AbsoluteZeroError if the value is below the absolute zero
+    threshold for the given scale.
+    """
+    if from_scale == "Celsius" and value < ABSOLUTE_ZERO_CELSIUS:
+        raise AbsoluteZeroError(
+            f"Temperature {value} °C is below absolute zero (−273.15 °C)."
+        )
+    elif from_scale == "Fahrenheit" and value < ABSOLUTE_ZERO_FAHRENHEIT:
+        raise AbsoluteZeroError(
+            f"Temperature {value} °F is below absolute zero (−459.67 °F)."
+        )
+    elif from_scale == "Kelvin" and value < ABSOLUTE_ZERO_KELVIN:
+        raise AbsoluteZeroError(
+            f"Temperature {value} K is below absolute zero (0 K)."
+        )
+
+
+def convert_temperature(value: float, from_scale: str, to_scale: str) -> float:
+    """
+    Convert a temperature from one scale to another.
+
+    Args:
+        value:      The numeric temperature to convert.
+        from_scale: The source scale ('Celsius', 'Fahrenheit', or 'Kelvin').
+        to_scale:   The target scale ('Celsius', 'Fahrenheit', or 'Kelvin').
+
+    Returns:
+        The converted temperature as a float.
+
+    Raises:
+        AbsoluteZeroError:  If the input temperature is below absolute zero.
+        InvalidScaleError:  If an unsupported scale name is provided.
+    """
+    if from_scale not in SUPPORTED_SCALES:
+        raise InvalidScaleError(
+            f"Unsupported source scale '{from_scale}'. "
+            f"Must be one of: {', '.join(sorted(SUPPORTED_SCALES))}."
+        )
+    if to_scale not in SUPPORTED_SCALES:
+        raise InvalidScaleError(
+            f"Unsupported target scale '{to_scale}'. "
+            f"Must be one of: {', '.join(sorted(SUPPORTED_SCALES))}."
+        )
+
+    _validate_absolute_zero(value, from_scale)
+
+    # Identity conversion — no math needed
+    if from_scale == to_scale:
+        return value
+
+    kelvin = _to_kelvin(value, from_scale)
+
+    # Defensive check: Kelvin should never be negative after validation,
+    # but guard against floating-point edge cases near absolute zero.
+    if kelvin < 0.0:
+        raise AbsoluteZeroError(
+            "Temperature is below absolute zero for the given scale."
+        )
+
+    result = _from_kelvin(kelvin, to_scale)
+    return result
+```
+
+### requirements.txt
+```
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+pydantic>=2.7.0
+```
+
+
+==================================================
+NODE: FRONTEND
+==================================================
+
+--- FRONTEND_CODE ---
+### index.html
+```html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/thermometer.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Temperature Converter</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
+```
+
+### package.json
+```json
+{
+  "name": "temperature-converter",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "vite --host 0.0.0.0 --port 3000",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "axios": "^1.7.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.3.1"
+  }
+}
+```
+
+### vite.config.js
+```javascript
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    host: '0.0.0.0',
+    port: 3000,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+    },
+  },
+});
+```
+
+### src/main.jsx
+```jsx
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App.jsx';
+import './styles/global.css';
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+```
+
+### src/App.jsx
+```jsx
+import React, { useState } from 'react';
+import ConverterForm from './components/ConverterForm.jsx';
+import ResultDisplay from './components/ResultDisplay.jsx';
+import styles from './styles/App.module.css';
+
+export default function App() {
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleResult = (data) => {
+    setResult(data);
+    setError(null);
+  };
+
+  const handleError = (message) => {
+    setError(message);
+    setResult(null);
+  };
+
+  const handleLoading = (loading) => {
+    setIsLoading(loading);
+  };
+
+  return (
+    <div className={styles.appWrapper}>
+      <div className={styles.backgroundOrbs}>
+        <div className={styles.orb1} />
+        <div className={styles.orb2} />
+        <div className={styles.orb3} />
+      </div>
+
+      <main className={styles.container}>
+        <header className={styles.header}>
+          <div className={styles.iconWrapper}>
+            <svg
+              className={styles.thermometerIcon}
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
+          <div className={styles.titleGroup}>
+            <h1 className={styles.title}>Temperature Converter</h1>
+            <p className={styles.subtitle}>
+              Convert between Celsius, Fahrenheit &amp; Kelvin instantly
+            </p>
+          </div>
+        </header>
+
+        <div className={styles.card}>
+          <ConverterForm
+            onResult={handleResult}
+            onError={handleError}
+            onLoading={handleLoading}
+            isLoading={isLoading}
+          />
+          <ResultDisplay
+            result={result}
+            error={error}
+            isLoading={isLoading}
+          />
+        </div>
+
+        <footer className={styles.footer}>
+          <p>All conversions route through Kelvin · Absolute zero enforced</p>
+        </footer>
+      </main>
+    </div>
+  );
+}
+```
+
+### src/api/convertApi.js
+```javascript
+import axios from 'axios';
+
+/**
+ * Calls the POST /convert endpoint to convert a temperature value.
+ *
+ * @param {Object} params
+ * @param {number} params.value       - The numeric temperature value
+ * @param {string} params.fromScale   - Source scale: 'Celsius' | 'Fahrenheit' | 'Kelvin'
+ * @param {string} params.toScale     - Target scale: 'Celsius' | 'Fahrenheit' | 'Kelvin'
+ * @returns {Promise<Object>}         - Parsed response: { result, from_scale, to_scale, input_value }
+ */
+export async function convertTemperature({ value, fromScale, toScale }) {
+  try {
+    const response = await axios.post('/api/convert', {
+      value: parseFloat(value),
+      from_scale: fromScale,
+      to_scale: toScale,
+    });
+    return response.data;
+  } catch (err) {
+    if (err.response) {
+      const detail = err.response.data?.detail;
+      if (typeof detail === 'string') {
+        throw new Error(detail);
+      } else if (Array.isArray(detail)) {
+        // Pydantic validation errors come as an array
+        const messages = detail.map((d) => d.msg).join('; ');
+        throw new Error(messages);
+      } else {
+        throw new Error('An unexpected server error occurred.');
+      }
+    } else if (err.request) {
+      throw new Error(
+        'Unable to reach the server. Please check your connection.'
+      );
+    } else {
+      throw new Error(err.message || 'An unknown error occurred.');
+    }
+  }
+}
+```
+
+### src/components/ScaleDropdown.jsx
+```jsx
+import React from 'react';
+import styles from '../styles/ConverterForm.module.css';
+
+const SCALES = ['Celsius', 'Fahrenheit', 'Kelvin'];
+
+const SCALE_SYMBOLS = {
+  Celsius: '°C',
+  Fahrenheit: '°F',
+  Kelvin: 'K',
+};
+
+export default function ScaleDropdown({ label, value, onChange, disabled }) {
+  return (
+    <div className={styles.dropdownGroup}>
+      <label className={styles.label}>{label}</label>
+      <div className={styles.selectWrapper}>
+        <select
+          className={styles.select}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={disabled}
+          aria-label={label}
+        >
+          {SCALES.map((scale) => (
+            <option key={scale} value={scale}>
+              {scale} ({SCALE_SYMBOLS[scale]})
+            </option>
+          ))}
+        </select>
+        <span className={styles.selectArrow}>
+          <svg
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              fillRule="evenodd"
+              d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+              clipRule="evenodd"
+            />
+          </svg>
+        </span>
+      </div>
+    </div>
+  );
+}
+```
+
+### src/components/ConverterForm.jsx
+```jsx
+import React, { useState } from 'react';
+import ScaleDropdown from './ScaleDropdown.jsx';
+import { convertTemperature } from '../api/convertApi.js';
+import styles from '../styles/ConverterForm.module.css';
+
+export default function ConverterForm({ onResult, onError, onLoading, isLoading }) {
+  const [inputValue, setInputValue] = useState('');
+  const [fromScale, setFromScale] = useState('Celsius');
+  const [toScale, setToScale] = useState('Fahrenheit');
+  const [inputError, setInputError] = useState('');
+
+  const validateInput = (val) => {
+    if (val.trim() === '') {
+      return 'Please enter a temperature value.';
+    }
+    if (isNaN(Number(val))) {
+      return 'Please enter a valid numeric value.';
+    }
+    return '';
+  };
+
+  const handleInputChange = (e) => {
+    setInputValue(e.target.value);
+    if (inputError) {
+      setInputError('');
+    }
+  };
+
+  const handleSwapScales = () => {
+    setFromScale(toScale);
+    setToScale(fromScale);
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    const validationError = validateInput(inputValue);
+    if (validationError) {
+      setInputError(validationError);
+      return;
+    }
+
+    setInputError('');
+    onLoading(true);
+
+    try {
+      const data = await convertTemperature({
+        value: inputValue,
+        fromScale,
+        toScale,
+      });
+      onResult(data);
+    } catch (err) {
+      onError(err.message);
+    } finally {
+      onLoading(false);
+    }
+  };
+
+  const isSameScale = fromScale === toScale;
+
+  return (
+    <form className={styles.form} onSubmit={handleSubmit} noValidate>
+      {/* Temperature Input */}
+      <div className={styles.inputGroup}>
+        <label className={styles.label} htmlFor="tempInput">
+          Temperature Value
+        </label>
+        <div className={styles.inputWrapper}>
+          <input
+            id="tempInput"
+            type="number"
+            className={`${styles.input} ${inputError ? styles.inputError : ''}`}
+            value={inputValue}
+            onChange={handleInputChange}
+            placeholder="e.g. 100, -40, 0.5"
+            disabled={isLoading}
+            step="any"
+            aria-describedby={inputError ? 'inputErrorMsg' : undefined}
+          />
+          {inputError && (
+            <span className={styles.errorIcon} aria-hidden="true">
+              ⚠
+            </span>
+          )}
+        </div>
+        {inputError && (
+          <p id="inputErrorMsg" className={styles.fieldError} role="alert">
+            {inputError}
+          </p>
+        )}
+      </div>
+
+      {/* Scale Selectors */}
+      <div className={styles.scalesRow}>
+        <ScaleDropdown
+          label="From Scale"
+          value={fromScale}
+          onChange={setFromScale}
+          disabled={isLoading}
+        />
+
+        <button
+          type="button"
+          className={styles.swapButton}
+          onClick={handleSwapScales}
+          disabled={isLoading}
+          aria-label="Swap scales"
+          title="Swap scales"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path d="M7 16V4m0 0L3 8m4-4l4 4" />
+            <path d="M17 8v12m0 0l4-4m-4 4l-4-4" />
+          </svg>
+        </button>
+
+        <ScaleDropdown
+          label="To Scale"
+          value={toScale}
+          onChange={setToScale}
+          disabled={isLoading}
+        />
+      </div>
+
+      {/* Same-scale hint */}
+      {isSameScale && (
+        <p className={styles.sameScaleHint} role="status">
+          <span aria-hidden="true">ℹ</span> Both scales are the same — the
+          result will equal the input value.
+        </p>
+      )}
+
+      {/* Submit Button */}
+      <button
+        type="submit"
+        className={styles.convertButton}
+        disabled={isLoading}
+      >
+        {isLoading ? (
+          <span className={styles.buttonContent}>
+            <span className={styles.spinner} aria-hidden="true" />
+            Converting…
+          </span>
+        ) : (
+          <span className={styles.buttonContent}>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              xmlns="http://www.w3.org/2000/svg"
+              className={styles.buttonIcon}
+            >
+              <polyline points="9 11 12 14 22 4" />
+              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+            </svg>
+            Convert
+          </span>
+        )}
+      </button>
+    </form>
+  );
+}
+```
+
+### src/components/ResultDisplay.jsx
+```jsx
+import React from 'react';
+import styles from '../styles/ResultDisplay.module.css';
+
+const SCALE_SYMBOLS = {
+  Celsius: '°C',
+  Fahrenheit: '°F',
+  Kelvin: 'K',
+};
+
+const SCALE_COLORS = {
+  Celsius: '#3b82f6',
+  Fahrenheit: '#f97316',
+  Kelvin: '#8b5cf6',
+};
+
+function formatNumber(num) {
+  // Show up to 6 significant decimal places, strip trailing zeros
+  const fixed = parseFloat(num.toFixed(6));
+  return fixed.toLocaleString('en-US', {
+    maximumFractionDigits: 6,
+    minimumFractionDigits: 0,
+  });
+}
+
+export default function ResultDisplay({ result, error, isLoading }) {
+  if (isLoading) {
+    return (
+      <div className={styles.container}>
+        <div className={styles.loadingState}>
+          <div className={styles.loadingDots}>
+            <span />
+            <span />
+            <span />
+          </div>
+          <p className={styles.loadingText}>Calculating conversion…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className={styles.container}>
+        <div className={styles.errorState} role="alert">
+          <div className={styles.errorIconWrapper}>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+          </div>
+          <div className={styles.errorContent}>
+            <p className={styles.errorTitle}>Conversion Error</p>
+            <p className={styles.errorMessage}>{error}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!result) {
+    return (
+      <div className={styles.container}>
+        <div className={styles.emptyState}>
+          <div className={styles.emptyIconWrapper}>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z" />
+            </svg>
+          </div>
+          <p className={styles.emptyText}>
+            Enter a value and press <strong>Convert</strong> to see the result
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const fromSymbol = SCALE_SYMBOLS[result.from_scale] || '';
+  const toSymbol = SCALE_SYMBOLS[result.to_scale] || '';
+  const fromColor = SCALE_COLORS[result.from_scale] || '#6b7280';
+  const toColor = SCALE_COLORS[result.to_scale] || '#6b7280';
+
+  return (
+    <div className={styles.container}>
+      <div className={styles.resultState}>
+        <p className={styles.resultLabel}>Conversion Result</p>
+
+        <div className={styles.resultEquation}>
+          {/* Input side */}
+          <div className={styles.tempBlock}>
+            <span
+              className={styles.tempValue}
+              style={{ color: fromColor }}
+            >
+              {formatNumber(result.input_value)}
+            </span>
+            <span
+              className={styles.tempUnit}
+              style={{ color: fromColor }}
+            >
+              {fromSymbol}
+            </span>
+            <span className={styles.scaleName}>{result.from_scale}</span>
+          </div>
+
+          {/* Equals sign */}
+          <div className={styles.equalsSign}>=</div>
+
+          {/* Output side */}
+          <div className={styles.tempBlock}>
+            <span
+              className={styles.tempValue}
+              style={{ color: toColor }}
+            >
+              {formatNumber(result.result)}
+            </span>
+            <span
+              className={styles.tempUnit}
+              style={{ color: toColor }}
+            >
+              {toSymbol}
+            </span>
+            <span className={styles.scaleName}>{result.to_scale}</span>
+          </div>
+        </div>
+
+        {/* Formatted string */}
+        <div className={styles.resultString}>
+          <code>
+            {formatNumber(result.input_value)}&nbsp;{fromSymbol}&nbsp;=&nbsp;
+            {formatNumber(result.result)}&nbsp;{toSymbol}
+          </code>
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+### src/styles/global.css
+```css
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --color-bg: #0f0f1a;
+  --color-surface: #1a1a2e;
+  --color-surface-2: #16213e;
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-border-focus: rgba(99, 102, 241, 0.6);
+  --color-text-primary: #f1f5f9;
+  --color-text-secondary: #94a3b8;
+  --color-text-muted: #64748b;
+  --color-accent: #6366f1;
+  --color-accent-hover: #4f46e5;
+  --color-accent-light: rgba(99, 102, 241, 0.15);
+  --color-error: #ef4444;
+  --color-error-bg: rgba(239, 68, 68, 0.1);
+  --color-error-border: rgba(239, 68, 68, 0.3);
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 0 40px rgba(99, 102, 241, 0.15);
+  --transition: 0.2s ease;
+  --font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-family);
+  background-color: var(--color-bg);
+  color: var(--color-text-primary);
+  min-height: 100vh;
+  line-height: 1.6;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type='number'] {
+  -moz-appearance: textfield;
+}
+
+button {
+  cursor: pointer;
+  font-family: var(--font-family);
+}
+
+select {
+  font-family: var(--font-family);
+}
+```
+
+### src/styles/App.module.css
+```css
+.appWrapper {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.backgroundOrbs {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.orb1 {
+  position: absolute;
+  top: -10%;
+  left: -10%;
+  width: 500px;
+  height: 500px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(99, 102, 241, 0.12) 0%,
+    transparent 70%
+  );
+  animation: floatOrb 12s ease-in-out infinite;
+}
+
+.orb2 {
+  position: absolute;
+  bottom: -15%;
+  right: -10%;
+  width: 600px;
+  height: 600px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(139, 92, 246, 0.1) 0%,
+    transparent 70%
+  );
+  animation: floatOrb 16s ease-in-out infinite reverse;
+}
+
+.orb3 {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 800px;
+  height: 800px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(59, 130, 246, 0.05) 0%,
+    transparent 60%
+  );
+  animation: floatOrb 20s ease-in-out infinite;
+}
+
+@keyframes floatOrb {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(20px, -20px) scale(1.05); }
+  66% { transform: translate(-15px, 15px) scale(0.97); }
+}
+
+.container {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0 0.25rem;
+}
+
+.iconWrapper {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4);
+}
+
+.thermometerIcon {
+  width: 26px;
+  height: 26px;
+  color: #ffffff;
+}
+
+.titleGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.title {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.subtitle {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  font-weight: 400;
+}
+
+.card {
+  background: rgba(26, 26, 46, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: 2rem;
+  box-shadow: var(--shadow-lg), var(--shadow-glow);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.footer {
+  text-align: center;
+  padding: 0 0.25rem;
+}
+
+.footer p {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  letter-spacing: 0.01em;
+}
+
+@media (max-width: 480px) {
+  .card {
+    padding: 1.5rem;
+  }
+
+  .title {
+    font-size: 1.3rem;
+  }
+
+  .iconWrapper {
+    width: 44px;
+    height: 44px;
+  }
+}
+```
+
+### src/styles/ConverterForm.module.css
+```css
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Input Group */
+.inputGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.inputWrapper {
+  position: relative;
+}
+
+.input {
+  width: 100%;
+  padding: 0.875rem 1rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: 1.125rem;
+  font-weight: 500;
+  transition: border-color var(--transition), background var(--transition),
+    box-shadow var(--transition);
+  outline: none;
+  appearance: none;
+}
+
+.input::placeholder {
+  color: var(--color-text-muted);
+  font-weight: 400;
+  font-size: 0.9375rem;
+}
+
+.input:focus {
+  border-color: var(--color-border-focus);
+  background: rgba(99, 102, 241, 0.05);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+.input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.inputError {
+  border-color: var(--color-error) !important;
+  background: var(--color-error-bg) !important;
+}
+
+.inputError:focus {
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15) !important;
+}
+
+.errorIcon {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-error);
+  font-size: 1rem;
+  pointer-events: none;
+}
+
+.fieldError {
+  font-size: 0.8125rem;
+  color: var(--color-error);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* Scales Row */
+.scalesRow {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.dropdownGroup {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.selectWrapper {
+  position: relative;
+}
+
+.select {
+  width: 100%;
+  padding: 0.875rem 2.5rem 0.875rem 1rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  transition: border-color var(--transition), background var(--transition),
+    box-shadow var(--transition);
+  outline: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+.select:focus {
+  border-color: var(--color-border-focus);
+  background: rgba(99, 102, 241, 0.05);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+.select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.select option {
+  background: #1a1a2e;
+  color: var(--color-text-primary);
+}
+
+.selectArrow {
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+}
+
+.selectArrow svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Swap Button */
+.swapButton {
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1.5px solid var(--color-border);
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition), border-color var(--transition),
+    color var(--transition), transform var(--transition);
+  margin-bottom: 0;
+}
+
+.swapButton svg {
+  width: 18px;
+  height: 18px;
+}
+
+.swapButton:hover:not(:disabled) {
+  background: var(--color-accent-light);
+  border-color: var(--color-border-focus);
+  color: var(--color-accent);
+  transform: rotate(180deg);
+}
+
+.swapButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Same-scale hint */
+.sameScaleHint {
+  font-size: 0.8125rem;
+  color: var(--color-warning);
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  border-radius: var(--radius-sm);
+  padding: 0.625rem 0.875rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 500;
+}
+
+/* Convert Button */
+.convertButton {
+  width: 100%;
+  padding: 1rem 1.5rem;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  border: none;
+  border-radius: var(--radius-md);
+  color: #ffffff;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  transition: opacity var(--transition), transform var(--transition),
+    box-shadow var(--transition);
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.35);
+}
+
+.convertButton:hover:not(:disabled) {
+  opacity: 0.92;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 28px rgba(99, 102, 241, 0.45);
+}
+
+.convertButton:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 2px 12px rgba(99, 102, 241, 0.3);
+}
+
+.convertButton:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.buttonContent {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.buttonIcon {
+  width: 18px;
+  height: 18px;
+}
+
+/* Spinner */
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 480px) {
+  .scalesRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .swapButton {
+    width: 100%;
+    height: 36px;
+    transform: rotate(90deg);
+  }
+
+  .swapButton:hover:not(:disabled) {
+    transform: rotate(270deg);
+  }
+}
+```
+
+### src/styles/ResultDisplay.module.css
+```css
+.container {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--color-border);
+}
+
+/* Loading State */
+.loadingState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.875rem;
+  padding: 1.5rem 0;
+}
+
+.loadingDots {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.loadingDots span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  animation: bounce 1.2s ease-in-out infinite;
+}
+
+.loadingDots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.loadingDots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes bounce {
+  0%, 80%, 100% { transform: scale(0.7); opacity: 0.5; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
+.loadingText {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+
+/* Error State */
+.errorState {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.875rem;
+  padding: 1rem 1.125rem;
+  background: var(--color-error-bg);
+  border: 1px solid var(--color-error-border);
+  border-radius: var(--radius-md);
+  animation: slideIn 0.25s ease;
+}
+
+.errorIconWrapper {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  color: var(--color-error);
+  margin-top: 1px;
+}
+
+.errorIconWrapper svg {
+  width: 100%;
+  height: 100%;
+}
+
+.errorContent {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.errorTitle {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--color-error);
+}
+
+.errorMessage {
+  font-size: 0.875rem;
+  color: #fca5a5;
+  line-height: 1.5;
+}
+
+/* Empty State */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.5rem 0;
+  text-align: center;
+}
+
+.emptyIconWrapper {
+  width: 40px;
+  height: 40px;
+  color: var(--color-text-muted);
+  opacity: 0.6;
+}
+
+.emptyIconWrapper svg {
+  width: 100%;
+  height: 100%;
+}
+
+.emptyText {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  line-height: 1.6;
+}
+
+.emptyText strong {
+  color: var(--color-text-secondary);
+}
+
+/* Result State */
+.resultState {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  animation: slideIn 0.3s ease;
+}
+
+.resultLabel {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+}
+
+.resultEquation {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.tempBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  min-width: 100px;
+}
+
+.tempValue {
+  font-size: 2.25rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  transition: color var(--transition);
+}
+
+.tempUnit {
+  font-size: 1.125rem;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.scaleName {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 0.1rem;
+}
+
+.equalsSign {
+  font-size: 2rem;
+  font-weight: 300;
+  color: var(--color-text-muted);
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* Formatted string */
+.resultString {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 1rem;
+  text-align: center;
+}
+
+.resultString code {
+  font-family: 'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace;
+  font-size: 0.9375rem;
+  color: var(--color-text-secondary);
+  letter-spacing: 0.02em;
+}
+
+/* Animations */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 480px) {
+  .tempValue {
+    font-size: 1.75rem;
+  }
+
+  .resultEquation {
+    gap: 0.75rem;
+  }
+
+  .tempBlock {
+    min-width: 80px;
+  }
+}
+```
+
+
+==================================================
+NODE: EXECUTOR
+==================================================
+
+--- EXECUTION_LOGS ---
+
+> temperature-converter@1.0.0 start
+> vite --host 0.0.0.0 --port 3000
+
+
+  VITE v5.4.21  ready in 152 ms
+
+  ➜  Local:   http://localhost:3000/
+  ➜  Network: http://172.17.0.2:3000/
+INFO:     Started server process [9]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+
+
+
+==================================================
+NODE: DEBUGGER
+==================================================
+
+--- ERROR_MESSAGES ---
+[]
+
+
+==================================================
+NODE: SAVER
+==================================================
+
+--- USER_IDEA ---
+Build a temperature converter. The user enters a value and selects the input and output scales (Celsius, Fahrenheit, Kelvin) from dropdowns. The backend calculates the conversion and returns the exact number.
+
+--- ARCHITECTURE_PLAN ---
+# Temperature Converter – Architecture Plan
+
+---
+
+## 1. Product Overview
+
+A lightweight web app where a user inputs a numeric temperature value, selects a source scale and a target scale, submits the form, and receives the precise converted value — calculated server-side.
+
+---
+
+## 2. Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | React (Vite) |
+| Backend | FastAPI (Python) |
+| HTTP Client | Axios |
+| Styling | CSS Modules |
+| Package Mgmt | pip + npm |
+
+---
+
+## 3. Functional Requirements
+
+### FR-1 — User Input
+- A numeric text field accepts the temperature value (integers and decimals, including negatives)
+- Two dropdowns: **From Scale** and **To Scale**, each containing `Celsius`, `Fahrenheit`, `Kelvin`
+- A **Convert** button triggers the API call
+
+### FR-2 — Conversion Logic (Backend)
+- All conversions route through Kelvin as the canonical intermediate unit
+- Supported pairs: C↔F, C↔K, F↔K (and same-scale identity)
+- Returns a JSON response with the result as a full-precision float
+- Validates input: rejects non-numeric values and temperatures below absolute zero
+
+### FR-3 — Result Display
+- The converted result is displayed clearly below the form
+- Shows: `{input} °{FromScale} = {result} °{ToScale}`
+- Handles and displays backend validation errors gracefully
+
+### FR-4 — Edge Cases
+- Same input/output scale → returns the original value
+- Absolute zero enforcement (e.g., reject < −273.15 °C)
+- Empty or non-numeric input → frontend blocks submission before API call
+
+---
+
+## 4. API Design
+
+### `POST /convert`
+
+**Request Body**
+```json
+{
+  "value": 100.0,
+  "from_scale": "Celsius",
+  "to_scale": "Fahrenheit"
+}
+```
+
+**Success Response** `200 OK`
+```json
+{
+  "result": 212.0,
+  "from_scale": "Celsius",
+  "to_scale": "Fahrenheit",
+  "input_value": 100.0
+}
+```
+
+**Error Response** `422 Unprocessable Entity`
+```json
+{
+  "detail": "Temperature is below absolute zero for the given scale."
+}
+```
+
+---
+
+## 5. Conversion Logic Rules
+
+```
+To convert any value → first convert to Kelvin → then convert to target:
+
+Celsius    → Kelvin:     K = C + 273.15
+Fahrenheit → Kelvin:     K = (F + 459.67) × 5/9
+Kelvin     → Kelvin:     K = K
+
+Kelvin → Celsius:        C = K − 273.15
+Kelvin → Fahrenheit:     F = K × 9/5 − 459.67
+Kelvin → Kelvin:         K = K
+
+Absolute zero in Kelvin: K >= 0
+```
+
+---
+
+## 6. File Structure
+
+```
+temperature-converter/
+│
+├── backend/
+│   ├── main.py                  # FastAPI app entry point, registers router
+│   ├── routers/
+│   │   └── convert.py           # POST /convert endpoint
+│   ├── services/
+│   │   └── conversion.py        # Pure conversion logic & absolute zero validation
+│   ├── models/
+│   │   └── schemas.py           # Pydantic request/response models
+│   └── requirements.txt         # fastapi, uvicorn, pydantic
+│
+└── frontend/
+    ├── index.html
+    ├── package.json
+    ├── vite.config.js
+    └── src/
+        ├── main.jsx             # React entry point
+        ├── App.jsx              # Root component, holds state
+        ├── api/
+        │   └── convertApi.js    # Axios call to POST /convert
+        ├── components/
+        │   ├── ConverterForm.jsx # Input field + two dropdowns + button
+        │   ├── ResultDisplay.jsx # Shows the formatted result or error
+        │   └── ScaleDropdown.jsx # Reusable dropdown for scale selection
+        └── styles/
+            ├── App.module.css
+            ├── ConverterForm.module.css
+            └── ResultDisplay.module.css
+```
+
+---
+
+## 7. Component Responsibilities
+
+### `App.jsx`
+- Owns state: `inputValue`, `fromScale`, `toScale`, `result`, `error`, `isLoading`
+- Passes handlers down to `ConverterForm`
+- Passes `result` and `error` to `ResultDisplay`
+
+### `ConverterForm.jsx`
+- Renders the numeric input, two `ScaleDropdown` instances, and the Convert button
+- Performs client-side validation (empty, non-numeric) before calling the API
+- Calls `convertApi.js` on submit and lifts result/error up to `App`
+
+### `ScaleDropdown.jsx`
+- Props: `label`, `value`, `onChange`
+- Renders a `<select>` with the three scale options
+
+### `ResultDisplay.jsx`
+- Props: `result`, `error`, `isLoading`
+- Conditionally renders a loading state, error message, or formatted result string
+
+### `convertApi.js`
+- Single exported async function `convertTemperature({ value, fromScale, toScale })`
+- Returns the parsed response data or throws a structured error
+
+---
+
+## 8. Data Flow (End-to-End)
+
+```
+User fills form
+      │
+      ▼
+ConverterForm validates input (client-side)
+      │
+      ▼
+convertApi.js → POST /convert → FastAPI router (convert.py)
+                                        │
+                                        ▼
+                               schemas.py validates Pydantic model
+                                        │
+                                        ▼
+                               conversion.py runs math + absolute zero check
+                                        │
+                                        ▼
+                               JSON response returned
+      │
+      ▼
+App.jsx updates state → ResultDisplay renders output
+```
+
+---
+
+## 9. Development Milestones
+
+| # | Milestone | Deliverable |
+|---|---|---|
+| 1 | Backend core | `conversion.py` with all 6 conversion paths + validation |
+| 2 | Backend API | Pydantic schemas + `/convert` endpoint wired up |
+| 3 | Frontend shell | Vite/React scaffold + `ConverterForm` renders correctly |
+| 4 | API integration | `convertApi.js` connected, result flows to `ResultDisplay` |
+| 5 | Error handling | Absolute zero errors + network errors displayed in UI |
+| 6 | Polish | Loading states, same-scale hint, CSS styling |
+
+--- FRONTEND_CODE ---
+### index.html
+```html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/thermometer.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Temperature Converter</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
+```
+
+### package.json
+```json
+{
+  "name": "temperature-converter",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "vite --host 0.0.0.0 --port 3000",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "axios": "^1.7.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.3.1"
+  }
+}
+```
+
+### vite.config.js
+```javascript
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    host: '0.0.0.0',
+    port: 3000,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+    },
+  },
+});
+```
+
+### src/main.jsx
+```jsx
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App.jsx';
+import './styles/global.css';
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+```
+
+### src/App.jsx
+```jsx
+import React, { useState } from 'react';
+import ConverterForm from './components/ConverterForm.jsx';
+import ResultDisplay from './components/ResultDisplay.jsx';
+import styles from './styles/App.module.css';
+
+export default function App() {
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleResult = (data) => {
+    setResult(data);
+    setError(null);
+  };
+
+  const handleError = (message) => {
+    setError(message);
+    setResult(null);
+  };
+
+  const handleLoading = (loading) => {
+    setIsLoading(loading);
+  };
+
+  return (
+    <div className={styles.appWrapper}>
+      <div className={styles.backgroundOrbs}>
+        <div className={styles.orb1} />
+        <div className={styles.orb2} />
+        <div className={styles.orb3} />
+      </div>
+
+      <main className={styles.container}>
+        <header className={styles.header}>
+          <div className={styles.iconWrapper}>
+            <svg
+              className={styles.thermometerIcon}
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
+          <div className={styles.titleGroup}>
+            <h1 className={styles.title}>Temperature Converter</h1>
+            <p className={styles.subtitle}>
+              Convert between Celsius, Fahrenheit &amp; Kelvin instantly
+            </p>
+          </div>
+        </header>
+
+        <div className={styles.card}>
+          <ConverterForm
+            onResult={handleResult}
+            onError={handleError}
+            onLoading={handleLoading}
+            isLoading={isLoading}
+          />
+          <ResultDisplay
+            result={result}
+            error={error}
+            isLoading={isLoading}
+          />
+        </div>
+
+        <footer className={styles.footer}>
+          <p>All conversions route through Kelvin · Absolute zero enforced</p>
+        </footer>
+      </main>
+    </div>
+  );
+}
+```
+
+### src/api/convertApi.js
+```javascript
+import axios from 'axios';
+
+/**
+ * Calls the POST /convert endpoint to convert a temperature value.
+ *
+ * @param {Object} params
+ * @param {number} params.value       - The numeric temperature value
+ * @param {string} params.fromScale   - Source scale: 'Celsius' | 'Fahrenheit' | 'Kelvin'
+ * @param {string} params.toScale     - Target scale: 'Celsius' | 'Fahrenheit' | 'Kelvin'
+ * @returns {Promise<Object>}         - Parsed response: { result, from_scale, to_scale, input_value }
+ */
+export async function convertTemperature({ value, fromScale, toScale }) {
+  try {
+    const response = await axios.post('/api/convert', {
+      value: parseFloat(value),
+      from_scale: fromScale,
+      to_scale: toScale,
+    });
+    return response.data;
+  } catch (err) {
+    if (err.response) {
+      const detail = err.response.data?.detail;
+      if (typeof detail === 'string') {
+        throw new Error(detail);
+      } else if (Array.isArray(detail)) {
+        // Pydantic validation errors come as an array
+        const messages = detail.map((d) => d.msg).join('; ');
+        throw new Error(messages);
+      } else {
+        throw new Error('An unexpected server error occurred.');
+      }
+    } else if (err.request) {
+      throw new Error(
+        'Unable to reach the server. Please check your connection.'
+      );
+    } else {
+      throw new Error(err.message || 'An unknown error occurred.');
+    }
+  }
+}
+```
+
+### src/components/ScaleDropdown.jsx
+```jsx
+import React from 'react';
+import styles from '../styles/ConverterForm.module.css';
+
+const SCALES = ['Celsius', 'Fahrenheit', 'Kelvin'];
+
+const SCALE_SYMBOLS = {
+  Celsius: '°C',
+  Fahrenheit: '°F',
+  Kelvin: 'K',
+};
+
+export default function ScaleDropdown({ label, value, onChange, disabled }) {
+  return (
+    <div className={styles.dropdownGroup}>
+      <label className={styles.label}>{label}</label>
+      <div className={styles.selectWrapper}>
+        <select
+          className={styles.select}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={disabled}
+          aria-label={label}
+        >
+          {SCALES.map((scale) => (
+            <option key={scale} value={scale}>
+              {scale} ({SCALE_SYMBOLS[scale]})
+            </option>
+          ))}
+        </select>
+        <span className={styles.selectArrow}>
+          <svg
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              fillRule="evenodd"
+              d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+              clipRule="evenodd"
+            />
+          </svg>
+        </span>
+      </div>
+    </div>
+  );
+}
+```
+
+### src/components/ConverterForm.jsx
+```jsx
+import React, { useState } from 'react';
+import ScaleDropdown from './ScaleDropdown.jsx';
+import { convertTemperature } from '../api/convertApi.js';
+import styles from '../styles/ConverterForm.module.css';
+
+export default function ConverterForm({ onResult, onError, onLoading, isLoading }) {
+  const [inputValue, setInputValue] = useState('');
+  const [fromScale, setFromScale] = useState('Celsius');
+  const [toScale, setToScale] = useState('Fahrenheit');
+  const [inputError, setInputError] = useState('');
+
+  const validateInput = (val) => {
+    if (val.trim() === '') {
+      return 'Please enter a temperature value.';
+    }
+    if (isNaN(Number(val))) {
+      return 'Please enter a valid numeric value.';
+    }
+    return '';
+  };
+
+  const handleInputChange = (e) => {
+    setInputValue(e.target.value);
+    if (inputError) {
+      setInputError('');
+    }
+  };
+
+  const handleSwapScales = () => {
+    setFromScale(toScale);
+    setToScale(fromScale);
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    const validationError = validateInput(inputValue);
+    if (validationError) {
+      setInputError(validationError);
+      return;
+    }
+
+    setInputError('');
+    onLoading(true);
+
+    try {
+      const data = await convertTemperature({
+        value: inputValue,
+        fromScale,
+        toScale,
+      });
+      onResult(data);
+    } catch (err) {
+      onError(err.message);
+    } finally {
+      onLoading(false);
+    }
+  };
+
+  const isSameScale = fromScale === toScale;
+
+  return (
+    <form className={styles.form} onSubmit={handleSubmit} noValidate>
+      {/* Temperature Input */}
+      <div className={styles.inputGroup}>
+        <label className={styles.label} htmlFor="tempInput">
+          Temperature Value
+        </label>
+        <div className={styles.inputWrapper}>
+          <input
+            id="tempInput"
+            type="number"
+            className={`${styles.input} ${inputError ? styles.inputError : ''}`}
+            value={inputValue}
+            onChange={handleInputChange}
+            placeholder="e.g. 100, -40, 0.5"
+            disabled={isLoading}
+            step="any"
+            aria-describedby={inputError ? 'inputErrorMsg' : undefined}
+          />
+          {inputError && (
+            <span className={styles.errorIcon} aria-hidden="true">
+              ⚠
+            </span>
+          )}
+        </div>
+        {inputError && (
+          <p id="inputErrorMsg" className={styles.fieldError} role="alert">
+            {inputError}
+          </p>
+        )}
+      </div>
+
+      {/* Scale Selectors */}
+      <div className={styles.scalesRow}>
+        <ScaleDropdown
+          label="From Scale"
+          value={fromScale}
+          onChange={setFromScale}
+          disabled={isLoading}
+        />
+
+        <button
+          type="button"
+          className={styles.swapButton}
+          onClick={handleSwapScales}
+          disabled={isLoading}
+          aria-label="Swap scales"
+          title="Swap scales"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path d="M7 16V4m0 0L3 8m4-4l4 4" />
+            <path d="M17 8v12m0 0l4-4m-4 4l-4-4" />
+          </svg>
+        </button>
+
+        <ScaleDropdown
+          label="To Scale"
+          value={toScale}
+          onChange={setToScale}
+          disabled={isLoading}
+        />
+      </div>
+
+      {/* Same-scale hint */}
+      {isSameScale && (
+        <p className={styles.sameScaleHint} role="status">
+          <span aria-hidden="true">ℹ</span> Both scales are the same — the
+          result will equal the input value.
+        </p>
+      )}
+
+      {/* Submit Button */}
+      <button
+        type="submit"
+        className={styles.convertButton}
+        disabled={isLoading}
+      >
+        {isLoading ? (
+          <span className={styles.buttonContent}>
+            <span className={styles.spinner} aria-hidden="true" />
+            Converting…
+          </span>
+        ) : (
+          <span className={styles.buttonContent}>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              xmlns="http://www.w3.org/2000/svg"
+              className={styles.buttonIcon}
+            >
+              <polyline points="9 11 12 14 22 4" />
+              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+            </svg>
+            Convert
+          </span>
+        )}
+      </button>
+    </form>
+  );
+}
+```
+
+### src/components/ResultDisplay.jsx
+```jsx
+import React from 'react';
+import styles from '../styles/ResultDisplay.module.css';
+
+const SCALE_SYMBOLS = {
+  Celsius: '°C',
+  Fahrenheit: '°F',
+  Kelvin: 'K',
+};
+
+const SCALE_COLORS = {
+  Celsius: '#3b82f6',
+  Fahrenheit: '#f97316',
+  Kelvin: '#8b5cf6',
+};
+
+function formatNumber(num) {
+  // Show up to 6 significant decimal places, strip trailing zeros
+  const fixed = parseFloat(num.toFixed(6));
+  return fixed.toLocaleString('en-US', {
+    maximumFractionDigits: 6,
+    minimumFractionDigits: 0,
+  });
+}
+
+export default function ResultDisplay({ result, error, isLoading }) {
+  if (isLoading) {
+    return (
+      <div className={styles.container}>
+        <div className={styles.loadingState}>
+          <div className={styles.loadingDots}>
+            <span />
+            <span />
+            <span />
+          </div>
+          <p className={styles.loadingText}>Calculating conversion…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className={styles.container}>
+        <div className={styles.errorState} role="alert">
+          <div className={styles.errorIconWrapper}>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+          </div>
+          <div className={styles.errorContent}>
+            <p className={styles.errorTitle}>Conversion Error</p>
+            <p className={styles.errorMessage}>{error}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!result) {
+    return (
+      <div className={styles.container}>
+        <div className={styles.emptyState}>
+          <div className={styles.emptyIconWrapper}>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z" />
+            </svg>
+          </div>
+          <p className={styles.emptyText}>
+            Enter a value and press <strong>Convert</strong> to see the result
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const fromSymbol = SCALE_SYMBOLS[result.from_scale] || '';
+  const toSymbol = SCALE_SYMBOLS[result.to_scale] || '';
+  const fromColor = SCALE_COLORS[result.from_scale] || '#6b7280';
+  const toColor = SCALE_COLORS[result.to_scale] || '#6b7280';
+
+  return (
+    <div className={styles.container}>
+      <div className={styles.resultState}>
+        <p className={styles.resultLabel}>Conversion Result</p>
+
+        <div className={styles.resultEquation}>
+          {/* Input side */}
+          <div className={styles.tempBlock}>
+            <span
+              className={styles.tempValue}
+              style={{ color: fromColor }}
+            >
+              {formatNumber(result.input_value)}
+            </span>
+            <span
+              className={styles.tempUnit}
+              style={{ color: fromColor }}
+            >
+              {fromSymbol}
+            </span>
+            <span className={styles.scaleName}>{result.from_scale}</span>
+          </div>
+
+          {/* Equals sign */}
+          <div className={styles.equalsSign}>=</div>
+
+          {/* Output side */}
+          <div className={styles.tempBlock}>
+            <span
+              className={styles.tempValue}
+              style={{ color: toColor }}
+            >
+              {formatNumber(result.result)}
+            </span>
+            <span
+              className={styles.tempUnit}
+              style={{ color: toColor }}
+            >
+              {toSymbol}
+            </span>
+            <span className={styles.scaleName}>{result.to_scale}</span>
+          </div>
+        </div>
+
+        {/* Formatted string */}
+        <div className={styles.resultString}>
+          <code>
+            {formatNumber(result.input_value)}&nbsp;{fromSymbol}&nbsp;=&nbsp;
+            {formatNumber(result.result)}&nbsp;{toSymbol}
+          </code>
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+### src/styles/global.css
+```css
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --color-bg: #0f0f1a;
+  --color-surface: #1a1a2e;
+  --color-surface-2: #16213e;
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-border-focus: rgba(99, 102, 241, 0.6);
+  --color-text-primary: #f1f5f9;
+  --color-text-secondary: #94a3b8;
+  --color-text-muted: #64748b;
+  --color-accent: #6366f1;
+  --color-accent-hover: #4f46e5;
+  --color-accent-light: rgba(99, 102, 241, 0.15);
+  --color-error: #ef4444;
+  --color-error-bg: rgba(239, 68, 68, 0.1);
+  --color-error-border: rgba(239, 68, 68, 0.3);
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 0 40px rgba(99, 102, 241, 0.15);
+  --transition: 0.2s ease;
+  --font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-family);
+  background-color: var(--color-bg);
+  color: var(--color-text-primary);
+  min-height: 100vh;
+  line-height: 1.6;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type='number'] {
+  -moz-appearance: textfield;
+}
+
+button {
+  cursor: pointer;
+  font-family: var(--font-family);
+}
+
+select {
+  font-family: var(--font-family);
+}
+```
+
+### src/styles/App.module.css
+```css
+.appWrapper {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.backgroundOrbs {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.orb1 {
+  position: absolute;
+  top: -10%;
+  left: -10%;
+  width: 500px;
+  height: 500px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(99, 102, 241, 0.12) 0%,
+    transparent 70%
+  );
+  animation: floatOrb 12s ease-in-out infinite;
+}
+
+.orb2 {
+  position: absolute;
+  bottom: -15%;
+  right: -10%;
+  width: 600px;
+  height: 600px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(139, 92, 246, 0.1) 0%,
+    transparent 70%
+  );
+  animation: floatOrb 16s ease-in-out infinite reverse;
+}
+
+.orb3 {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 800px;
+  height: 800px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(59, 130, 246, 0.05) 0%,
+    transparent 60%
+  );
+  animation: floatOrb 20s ease-in-out infinite;
+}
+
+@keyframes floatOrb {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(20px, -20px) scale(1.05); }
+  66% { transform: translate(-15px, 15px) scale(0.97); }
+}
+
+.container {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0 0.25rem;
+}
+
+.iconWrapper {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4);
+}
+
+.thermometerIcon {
+  width: 26px;
+  height: 26px;
+  color: #ffffff;
+}
+
+.titleGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.title {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.subtitle {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  font-weight: 400;
+}
+
+.card {
+  background: rgba(26, 26, 46, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: 2rem;
+  box-shadow: var(--shadow-lg), var(--shadow-glow);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.footer {
+  text-align: center;
+  padding: 0 0.25rem;
+}
+
+.footer p {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  letter-spacing: 0.01em;
+}
+
+@media (max-width: 480px) {
+  .card {
+    padding: 1.5rem;
+  }
+
+  .title {
+    font-size: 1.3rem;
+  }
+
+  .iconWrapper {
+    width: 44px;
+    height: 44px;
+  }
+}
+```
+
+### src/styles/ConverterForm.module.css
+```css
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Input Group */
+.inputGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.inputWrapper {
+  position: relative;
+}
+
+.input {
+  width: 100%;
+  padding: 0.875rem 1rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: 1.125rem;
+  font-weight: 500;
+  transition: border-color var(--transition), background var(--transition),
+    box-shadow var(--transition);
+  outline: none;
+  appearance: none;
+}
+
+.input::placeholder {
+  color: var(--color-text-muted);
+  font-weight: 400;
+  font-size: 0.9375rem;
+}
+
+.input:focus {
+  border-color: var(--color-border-focus);
+  background: rgba(99, 102, 241, 0.05);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+.input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.inputError {
+  border-color: var(--color-error) !important;
+  background: var(--color-error-bg) !important;
+}
+
+.inputError:focus {
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15) !important;
+}
+
+.errorIcon {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-error);
+  font-size: 1rem;
+  pointer-events: none;
+}
+
+.fieldError {
+  font-size: 0.8125rem;
+  color: var(--color-error);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* Scales Row */
+.scalesRow {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.dropdownGroup {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.selectWrapper {
+  position: relative;
+}
+
+.select {
+  width: 100%;
+  padding: 0.875rem 2.5rem 0.875rem 1rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  transition: border-color var(--transition), background var(--transition),
+    box-shadow var(--transition);
+  outline: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+.select:focus {
+  border-color: var(--color-border-focus);
+  background: rgba(99, 102, 241, 0.05);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+.select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.select option {
+  background: #1a1a2e;
+  color: var(--color-text-primary);
+}
+
+.selectArrow {
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+}
+
+.selectArrow svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Swap Button */
+.swapButton {
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1.5px solid var(--color-border);
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition), border-color var(--transition),
+    color var(--transition), transform var(--transition);
+  margin-bottom: 0;
+}
+
+.swapButton svg {
+  width: 18px;
+  height: 18px;
+}
+
+.swapButton:hover:not(:disabled) {
+  background: var(--color-accent-light);
+  border-color: var(--color-border-focus);
+  color: var(--color-accent);
+  transform: rotate(180deg);
+}
+
+.swapButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Same-scale hint */
+.sameScaleHint {
+  font-size: 0.8125rem;
+  color: var(--color-warning);
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  border-radius: var(--radius-sm);
+  padding: 0.625rem 0.875rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 500;
+}
+
+/* Convert Button */
+.convertButton {
+  width: 100%;
+  padding: 1rem 1.5rem;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  border: none;
+  border-radius: var(--radius-md);
+  color: #ffffff;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  transition: opacity var(--transition), transform var(--transition),
+    box-shadow var(--transition);
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.35);
+}
+
+.convertButton:hover:not(:disabled) {
+  opacity: 0.92;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 28px rgba(99, 102, 241, 0.45);
+}
+
+.convertButton:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 2px 12px rgba(99, 102, 241, 0.3);
+}
+
+.convertButton:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.buttonContent {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.buttonIcon {
+  width: 18px;
+  height: 18px;
+}
+
+/* Spinner */
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 480px) {
+  .scalesRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .swapButton {
+    width: 100%;
+    height: 36px;
+    transform: rotate(90deg);
+  }
+
+  .swapButton:hover:not(:disabled) {
+    transform: rotate(270deg);
+  }
+}
+```
+
+### src/styles/ResultDisplay.module.css
+```css
+.container {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--color-border);
+}
+
+/* Loading State */
+.loadingState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.875rem;
+  padding: 1.5rem 0;
+}
+
+.loadingDots {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.loadingDots span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  animation: bounce 1.2s ease-in-out infinite;
+}
+
+.loadingDots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.loadingDots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes bounce {
+  0%, 80%, 100% { transform: scale(0.7); opacity: 0.5; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
+.loadingText {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+
+/* Error State */
+.errorState {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.875rem;
+  padding: 1rem 1.125rem;
+  background: var(--color-error-bg);
+  border: 1px solid var(--color-error-border);
+  border-radius: var(--radius-md);
+  animation: slideIn 0.25s ease;
+}
+
+.errorIconWrapper {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  color: var(--color-error);
+  margin-top: 1px;
+}
+
+.errorIconWrapper svg {
+  width: 100%;
+  height: 100%;
+}
+
+.errorContent {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.errorTitle {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--color-error);
+}
+
+.errorMessage {
+  font-size: 0.875rem;
+  color: #fca5a5;
+  line-height: 1.5;
+}
+
+/* Empty State */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.5rem 0;
+  text-align: center;
+}
+
+.emptyIconWrapper {
+  width: 40px;
+  height: 40px;
+  color: var(--color-text-muted);
+  opacity: 0.6;
+}
+
+.emptyIconWrapper svg {
+  width: 100%;
+  height: 100%;
+}
+
+.emptyText {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  line-height: 1.6;
+}
+
+.emptyText strong {
+  color: var(--color-text-secondary);
+}
+
+/* Result State */
+.resultState {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  animation: slideIn 0.3s ease;
+}
+
+.resultLabel {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+}
+
+.resultEquation {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.tempBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  min-width: 100px;
+}
+
+.tempValue {
+  font-size: 2.25rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  transition: color var(--transition);
+}
+
+.tempUnit {
+  font-size: 1.125rem;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.scaleName {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 0.1rem;
+}
+
+.equalsSign {
+  font-size: 2rem;
+  font-weight: 300;
+  color: var(--color-text-muted);
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* Formatted string */
+.resultString {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 1rem;
+  text-align: center;
+}
+
+.resultString code {
+  font-family: 'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace;
+  font-size: 0.9375rem;
+  color: var(--color-text-secondary);
+  letter-spacing: 0.02em;
+}
+
+/* Animations */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 480px) {
+  .tempValue {
+    font-size: 1.75rem;
+  }
+
+  .resultEquation {
+    gap: 0.75rem;
+  }
+
+  .tempBlock {
+    min-width: 80px;
+  }
+}
+```
+
+--- BACKEND_CODE ---
+### app/main.py
+```python
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from app.routers import convert
+
+app = FastAPI(
+    title="Temperature Converter API",
+    description="A simple API for converting temperatures between Celsius, Fahrenheit, and Kelvin.",
+    version="1.0.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(convert.router)
+
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+```
+
+### app/routers/convert.py
+```python
+from fastapi import APIRouter, HTTPException
+from app.models.schemas import ConversionRequest, ConversionResponse
+from app.services.conversion import convert_temperature, AbsoluteZeroError, InvalidScaleError
+
+router = APIRouter()
+
+
+@router.post("/convert", response_model=ConversionResponse)
+def convert(request: ConversionRequest):
+    """
+    Convert a temperature value from one scale to another.
+
+    Supported scales: Celsius, Fahrenheit, Kelvin
+
+    Raises 422 if the temperature is below absolute zero or if an invalid scale is provided.
+    """
+    try:
+        result = convert_temperature(
+            value=request.value,
+            from_scale=request.from_scale,
+            to_scale=request.to_scale,
+        )
+    except AbsoluteZeroError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except InvalidScaleError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    return ConversionResponse(
+        result=result,
+        from_scale=request.from_scale,
+        to_scale=request.to_scale,
+        input_value=request.value,
+    )
+```
+
+### app/models/schemas.py
+```python
+from pydantic import BaseModel, field_validator
+from typing import Literal
+
+Scale = Literal["Celsius", "Fahrenheit", "Kelvin"]
+
+
+class ConversionRequest(BaseModel):
+    value: float
+    from_scale: Scale
+    to_scale: Scale
+
+    @field_validator("value")
+    @classmethod
+    def value_must_be_finite(cls, v: float) -> float:
+        import math
+        if math.isnan(v) or math.isinf(v):
+            raise ValueError("Temperature value must be a finite number.")
+        return v
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "value": 100.0,
+                    "from_scale": "Celsius",
+                    "to_scale": "Fahrenheit",
+                }
+            ]
+        }
+    }
+
+
+class ConversionResponse(BaseModel):
+    result: float
+    from_scale: Scale
+    to_scale: Scale
+    input_value: float
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "result": 212.0,
+                    "from_scale": "Celsius",
+                    "to_scale": "Fahrenheit",
+                    "input_value": 100.0,
+                }
+            ]
+        }
+    }
+```
+
+### app/services/conversion.py
+```python
+"""
+Pure conversion logic for temperature scales.
+
+All conversions route through Kelvin as the canonical intermediate unit:
+
+  Celsius    → Kelvin:  K = C + 273.15
+  Fahrenheit → Kelvin:  K = (F + 459.67) × 5/9
+  Kelvin     → Kelvin:  K = K
+
+  Kelvin → Celsius:     C = K − 273.15
+  Kelvin → Fahrenheit:  F = K × 9/5 − 459.67
+  Kelvin → Kelvin:      K = K
+
+Absolute zero constraint: K >= 0
+"""
+
+ABSOLUTE_ZERO_KELVIN = 0.0
+ABSOLUTE_ZERO_CELSIUS = -273.15
+ABSOLUTE_ZERO_FAHRENHEIT = -459.67
+
+SUPPORTED_SCALES = {"Celsius", "Fahrenheit", "Kelvin"}
+
+
+class AbsoluteZeroError(ValueError):
+    """Raised when the input temperature is below absolute zero."""
+    pass
+
+
+class InvalidScaleError(ValueError):
+    """Raised when an unsupported temperature scale is provided."""
+    pass
+
+
+def _to_kelvin(value: float, from_scale: str) -> float:
+    """Convert a temperature value from the given scale to Kelvin."""
+    if from_scale == "Celsius":
+        return value + 273.15
+    elif from_scale == "Fahrenheit":
+        return (value + 459.67) * 5.0 / 9.0
+    elif from_scale == "Kelvin":
+        return value
+    else:
+        raise InvalidScaleError(
+            f"Unsupported scale '{from_scale}'. Must be one of: {', '.join(sorted(SUPPORTED_SCALES))}."
+        )
+
+
+def _from_kelvin(kelvin: float, to_scale: str) -> float:
+    """Convert a temperature value from Kelvin to the target scale."""
+    if to_scale == "Celsius":
+        return kelvin - 273.15
+    elif to_scale == "Fahrenheit":
+        return kelvin * 9.0 / 5.0 - 459.67
+    elif to_scale == "Kelvin":
+        return kelvin
+    else:
+        raise InvalidScaleError(
+            f"Unsupported scale '{to_scale}'. Must be one of: {', '.join(sorted(SUPPORTED_SCALES))}."
+        )
+
+
+def _validate_absolute_zero(value: float, from_scale: str) -> None:
+    """
+    Validate that the input temperature is not below absolute zero.
+
+    Raises AbsoluteZeroError if the value is below the absolute zero
+    threshold for the given scale.
+    """
+    if from_scale == "Celsius" and value < ABSOLUTE_ZERO_CELSIUS:
+        raise AbsoluteZeroError(
+            f"Temperature {value} °C is below absolute zero (−273.15 °C)."
+        )
+    elif from_scale == "Fahrenheit" and value < ABSOLUTE_ZERO_FAHRENHEIT:
+        raise AbsoluteZeroError(
+            f"Temperature {value} °F is below absolute zero (−459.67 °F)."
+        )
+    elif from_scale == "Kelvin" and value < ABSOLUTE_ZERO_KELVIN:
+        raise AbsoluteZeroError(
+            f"Temperature {value} K is below absolute zero (0 K)."
+        )
+
+
+def convert_temperature(value: float, from_scale: str, to_scale: str) -> float:
+    """
+    Convert a temperature from one scale to another.
+
+    Args:
+        value:      The numeric temperature to convert.
+        from_scale: The source scale ('Celsius', 'Fahrenheit', or 'Kelvin').
+        to_scale:   The target scale ('Celsius', 'Fahrenheit', or 'Kelvin').
+
+    Returns:
+        The converted temperature as a float.
+
+    Raises:
+        AbsoluteZeroError:  If the input temperature is below absolute zero.
+        InvalidScaleError:  If an unsupported scale name is provided.
+    """
+    if from_scale not in SUPPORTED_SCALES:
+        raise InvalidScaleError(
+            f"Unsupported source scale '{from_scale}'. "
+            f"Must be one of: {', '.join(sorted(SUPPORTED_SCALES))}."
+        )
+    if to_scale not in SUPPORTED_SCALES:
+        raise InvalidScaleError(
+            f"Unsupported target scale '{to_scale}'. "
+            f"Must be one of: {', '.join(sorted(SUPPORTED_SCALES))}."
+        )
+
+    _validate_absolute_zero(value, from_scale)
+
+    # Identity conversion — no math needed
+    if from_scale == to_scale:
+        return value
+
+    kelvin = _to_kelvin(value, from_scale)
+
+    # Defensive check: Kelvin should never be negative after validation,
+    # but guard against floating-point edge cases near absolute zero.
+    if kelvin < 0.0:
+        raise AbsoluteZeroError(
+            "Temperature is below absolute zero for the given scale."
+        )
+
+    result = _from_kelvin(kelvin, to_scale)
+    return result
+```
+
+### requirements.txt
+```
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+pydantic>=2.7.0
+```
+
+--- EXECUTION_LOGS ---
+
+> temperature-converter@1.0.0 start
+> vite --host 0.0.0.0 --port 3000
+
+
+  VITE v5.4.21  ready in 152 ms
+
+  ➜  Local:   http://localhost:3000/
+  ➜  Network: http://172.17.0.2:3000/
+INFO:     Started server process [9]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+
+
+--- ERROR_MESSAGES ---
+[]
+
+--- ITERATION_COUNT ---
+0

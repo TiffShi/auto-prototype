@@ -1,0 +1,2583 @@
+=== AUTOPROTOTYPE DEBUG LOG ===
+
+
+==================================================
+NODE: PM
+==================================================
+
+--- ARCHITECTURE_PLAN ---
+# Calculator App — Architecture Plan
+
+---
+
+## 📋 Overview
+
+A clean, responsive calculator web application with a React frontend and a FastAPI backend that handles arithmetic operations via a REST API.
+
+---
+
+## ✅ Functional Requirements
+
+### Frontend
+- [ ] Display a calculator UI with buttons (0–9, operators, clear, equals)
+- [ ] Show current input and running expression in a display screen
+- [ ] Support operations: **addition, subtraction, multiplication, division**
+- [ ] Handle edge cases: division by zero, decimal inputs, chained operations
+- [ ] Send expression to backend API on `=` press and display result
+- [ ] Clear/reset button (`C`) to wipe the current state
+
+### Backend
+- [ ] `POST /calculate` — Accept a math expression, evaluate it, return the result
+- [ ] Validate and sanitize input (only allow safe numeric expressions)
+- [ ] Return structured JSON responses with result or error message
+- [ ] Handle division by zero and malformed expressions gracefully
+
+---
+
+## 🗂️ File Structure
+
+```
+calculator-app/
+├── backend/
+│   ├── main.py                  # FastAPI app entry point
+│   ├── routers/
+│   │   └── calculator.py        # /calculate route definition
+│   ├── services/
+│   │   └── calculator_service.py  # Expression parsing & evaluation logic
+│   ├── models/
+│   │   └── schemas.py           # Pydantic request/response models
+│   ├── requirements.txt         # fastapi, uvicorn, pydantic
+│   └── .env                     # Environment variables (PORT, etc.)
+│
+├── frontend/
+│   ├── public/
+│   │   └── index.html
+│   ├── src/
+│   │   ├── main.jsx             # React entry point
+│   │   ├── App.jsx              # Root component
+│   │   ├── components/
+│   │   │   ├── Calculator.jsx   # Main calculator shell component
+│   │   │   ├── Display.jsx      # Expression + result display screen
+│   │   │   └── Button.jsx       # Reusable calculator button component
+│   │   ├── hooks/
+│   │   │   └── useCalculator.js # State logic: input handling, API call
+│   │   ├── services/
+│   │   │   └── api.js           # Axios/fetch wrapper for backend calls
+│   │   └── styles/
+│   │       └── calculator.css   # Calculator layout and theme styles
+│   ├── package.json
+│   └── vite.config.js           # Vite bundler config
+│
+└── README.md
+```
+
+---
+
+## 🔌 API Contract
+
+### `POST /calculate`
+
+**Request Body:**
+```json
+{
+  "expression": "8 * (3 + 2)"
+}
+```
+
+**Success Response `200`:**
+```json
+{
+  "result": 40,
+  "expression": "8 * (3 + 2)"
+}
+```
+
+**Error Response `400`:**
+```json
+{
+  "error": "Division by zero is not allowed"
+}
+```
+
+---
+
+## 🧠 Key Implementation Notes
+
+### Backend — `calculator_service.py`
+- Use Python's `ast` module (NOT `eval()`) to safely parse and evaluate expressions
+- Whitelist only: numbers, `+`, `-`, `*`, `/`, `.`, `(`, `)`
+- Raise `HTTPException(400)` for invalid or unsafe input
+
+### Frontend — `useCalculator.js`
+- Track two pieces of state: `expression` (string) and `result` (string)
+- On `=`: call `api.js → POST /calculate` and update result display
+- On `C`: reset both states to empty
+
+### Frontend — `Button.jsx`
+```
+Props: { label, onClick, variant }
+Variants: "number" | "operator" | "action"
+```
+
+---
+
+## 🛠️ Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | React 18, Vite, CSS Modules |
+| Backend | FastAPI, Uvicorn, Pydantic v2 |
+| HTTP Client | Fetch API (native) |
+| Expression Eval | Python `ast` module |
+
+---
+
+## 🚀 Getting Started (Dev)
+
+```bash
+# Backend
+cd backend
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8000
+
+# Frontend
+cd frontend
+npm install
+npm run dev  # runs on http://localhost:5173
+```
+
+> **CORS:** Configure FastAPI `CORSMiddleware` to allow `http://localhost:5173` during development.
+
+
+==================================================
+NODE: BACKEND
+==================================================
+
+--- BACKEND_CODE ---
+### app/main.py
+```python
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.routers import calculator
+
+app = FastAPI(
+    title="Calculator API",
+    description="A simple calculator API that evaluates arithmetic expressions safely.",
+    version="1.0.0",
+)
+
+# CORS configuration for frontend development server
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(calculator.router)
+
+
+@app.get("/health", tags=["Health"])
+def health_check():
+    """Simple health check endpoint."""
+    return {"status": "ok"}
+```
+
+### app/routers/calculator.py
+```python
+from fastapi import APIRouter, HTTPException
+
+from app.models.schemas import CalculationRequest, CalculationResponse, ErrorResponse
+from app.services.calculator_service import evaluate_expression, CalculatorError
+
+router = APIRouter(
+    prefix="/calculate",
+    tags=["Calculator"],
+)
+
+
+@router.post(
+    "",
+    response_model=CalculationResponse,
+    responses={
+        400: {"model": ErrorResponse, "description": "Invalid expression or math error"},
+    },
+    summary="Evaluate a math expression",
+    description="Accepts a safe arithmetic expression string and returns the evaluated result.",
+)
+def calculate(payload: CalculationRequest):
+    """
+    Evaluate the provided arithmetic expression and return the result.
+
+    - Supports: `+`, `-`, `*`, `/`, `(`, `)`, decimal numbers
+    - Rejects: unsafe input, division by zero, malformed expressions
+    """
+    try:
+        result = evaluate_expression(payload.expression)
+    except CalculatorError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return CalculationResponse(result=result, expression=payload.expression)
+```
+
+### app/services/calculator_service.py
+```python
+import ast
+import operator
+import re
+from typing import Union
+
+# ---------------------------------------------------------------------------
+# Custom exception
+# ---------------------------------------------------------------------------
+
+class CalculatorError(Exception):
+    """Raised when an expression cannot be evaluated safely."""
+
+
+# ---------------------------------------------------------------------------
+# Whitelist of allowed AST node types and binary operators
+# ---------------------------------------------------------------------------
+
+_ALLOWED_OPERATORS: dict[type, callable] = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.USub: operator.neg,
+    ast.UAdd: operator.pos,
+}
+
+_ALLOWED_NODE_TYPES = (
+    ast.Expression,
+    ast.BinOp,
+    ast.UnaryOp,
+    ast.Constant,
+    ast.Add,
+    ast.Sub,
+    ast.Mult,
+    ast.Div,
+    ast.USub,
+    ast.UAdd,
+)
+
+# ---------------------------------------------------------------------------
+# Input sanitisation
+# ---------------------------------------------------------------------------
+
+# Only digits, whitespace, decimal points, and the four operators + parentheses
+_SAFE_PATTERN = re.compile(r"^[\d\s\+\-\*\/\.\(\)]+$")
+
+
+def _sanitise(expression: str) -> str:
+    """
+    Strip leading/trailing whitespace and verify the expression contains only
+    characters that are valid in a simple arithmetic expression.
+
+    Raises CalculatorError for any disallowed characters.
+    """
+    expr = expression.strip()
+
+    if not expr:
+        raise CalculatorError("Expression must not be empty.")
+
+    if not _SAFE_PATTERN.match(expr):
+        raise CalculatorError(
+            "Expression contains invalid characters. "
+            "Only numbers, +, -, *, /, ., (, ) are allowed."
+        )
+
+    return expr
+
+
+# ---------------------------------------------------------------------------
+# AST-based evaluator
+# ---------------------------------------------------------------------------
+
+def _eval_node(node: ast.AST) -> Union[int, float]:
+    """
+    Recursively evaluate an AST node.
+
+    Only whitelisted node types are permitted; anything else raises
+    CalculatorError to prevent code injection.
+    """
+    if not isinstance(node, _ALLOWED_NODE_TYPES):
+        raise CalculatorError(
+            f"Unsupported operation or expression type: {type(node).__name__}"
+        )
+
+    if isinstance(node, ast.Expression):
+        return _eval_node(node.body)
+
+    if isinstance(node, ast.Constant):
+        if not isinstance(node.value, (int, float)):
+            raise CalculatorError(
+                f"Unsupported literal type: {type(node.value).__name__}"
+            )
+        return node.value
+
+    if isinstance(node, ast.BinOp):
+        op_type = type(node.op)
+        if op_type not in _ALLOWED_OPERATORS:
+            raise CalculatorError(f"Unsupported binary operator: {op_type.__name__}")
+
+        left = _eval_node(node.left)
+        right = _eval_node(node.right)
+
+        # Guard against division by zero before calling the operator
+        if op_type is ast.Div:
+            if right == 0:
+                raise CalculatorError("Division by zero is not allowed.")
+
+        return _ALLOWED_OPERATORS[op_type](left, right)
+
+    if isinstance(node, ast.UnaryOp):
+        op_type = type(node.op)
+        if op_type not in _ALLOWED_OPERATORS:
+            raise CalculatorError(f"Unsupported unary operator: {op_type.__name__}")
+
+        operand = _eval_node(node.operand)
+        return _ALLOWED_OPERATORS[op_type](operand)
+
+    # Should never reach here given the isinstance guard above, but be explicit.
+    raise CalculatorError("Unexpected node type encountered during evaluation.")
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def evaluate_expression(expression: str) -> Union[int, float]:
+    """
+    Safely evaluate an arithmetic expression string.
+
+    Steps:
+    1. Sanitise the raw string (whitelist check).
+    2. Parse it into an AST using :func:`ast.parse`.
+    3. Walk the AST, allowing only numeric literals and the four basic
+       arithmetic operators.
+    4. Return the numeric result.
+
+    Args:
+        expression: A string such as ``"8 * (3 + 2)"`` or ``"10 / 2.5"``.
+
+    Returns:
+        The numeric result as an :class:`int` or :class:`float`.
+
+    Raises:
+        CalculatorError: For invalid input, unsafe constructs, or math errors.
+    """
+    sanitised = _sanitise(expression)
+
+    try:
+        tree = ast.parse(sanitised, mode="eval")
+    except SyntaxError as exc:
+        raise CalculatorError(
+            f"Malformed expression: {exc.msg}"
+        ) from exc
+
+    result = _eval_node(tree)
+
+    # Normalise -0.0 → 0
+    if result == 0:
+        return 0
+
+    # Return an int when the result is a whole number (e.g. 40.0 → 40)
+    if isinstance(result, float) and result.is_integer():
+        return int(result)
+
+    return result
+```
+
+### app/models/schemas.py
+```python
+from typing import Union
+
+from pydantic import BaseModel, Field, field_validator
+
+
+class CalculationRequest(BaseModel):
+    """Request body for the /calculate endpoint."""
+
+    expression: str = Field(
+        ...,
+        min_length=1,
+        max_length=256,
+        examples=["8 * (3 + 2)", "10 / 2.5", "100 - 37 + 3"],
+        description=(
+            "An arithmetic expression using numbers and the operators "
+            "+, -, *, /. Parentheses are supported."
+        ),
+    )
+
+    @field_validator("expression")
+    @classmethod
+    def expression_must_not_be_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Expression must not be blank or whitespace only.")
+        return stripped
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {"expression": "8 * (3 + 2)"},
+                {"expression": "100 / 4"},
+            ]
+        }
+    }
+
+
+class CalculationResponse(BaseModel):
+    """Successful response from the /calculate endpoint."""
+
+    result: Union[int, float] = Field(
+        ...,
+        description="The numeric result of the evaluated expression.",
+        examples=[40, 25.5],
+    )
+    expression: str = Field(
+        ...,
+        description="The original expression that was evaluated.",
+        examples=["8 * (3 + 2)"],
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {"result": 40, "expression": "8 * (3 + 2)"},
+            ]
+        }
+    }
+
+
+class ErrorResponse(BaseModel):
+    """Error response returned when evaluation fails."""
+
+    detail: str = Field(
+        ...,
+        description="Human-readable description of what went wrong.",
+        examples=["Division by zero is not allowed."],
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {"detail": "Division by zero is not allowed."},
+                {"detail": "Expression contains invalid characters."},
+            ]
+        }
+    }
+```
+
+### requirements.txt
+```python
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+pydantic>=2.7.0
+```
+
+
+==================================================
+NODE: FRONTEND
+==================================================
+
+--- FRONTEND_CODE ---
+### package.json
+```json
+{
+  "name": "calculator-frontend",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "vite --host 0.0.0.0 --port 3000",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.2.1",
+    "vite": "^5.2.0"
+  }
+}
+```
+
+### vite.config.js
+```javascript
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    host: '0.0.0.0',
+    port: 3000,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+    },
+  },
+});
+```
+
+### public/index.html
+```html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Calculator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
+```
+
+### src/main.jsx
+```javascript
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+```
+
+### src/App.jsx
+```javascript
+import React from 'react';
+import Calculator from './components/Calculator';
+import './styles/calculator.css';
+
+function App() {
+  return (
+    <div className="app">
+      <Calculator />
+    </div>
+  );
+}
+
+export default App;
+```
+
+### src/services/api.js
+```javascript
+const BASE_URL = '/api';
+
+/**
+ * Send an arithmetic expression to the backend for evaluation.
+ * @param {string} expression - The math expression string.
+ * @returns {Promise<{ result: number, expression: string }>}
+ */
+export async function calculate(expression) {
+  const response = await fetch(`${BASE_URL}/calculate`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ expression }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    // FastAPI returns { detail: "..." } on 400
+    throw new Error(data.detail || 'An unexpected error occurred.');
+  }
+
+  return data;
+}
+```
+
+### src/hooks/useCalculator.js
+```javascript
+import { useState, useCallback } from 'react';
+import { calculate } from '../services/api';
+
+const MAX_EXPRESSION_LENGTH = 64;
+
+export function useCalculator() {
+  const [expression, setExpression] = useState('');
+  const [displayResult, setDisplayResult] = useState('');
+  const [isError, setIsError] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [justEvaluated, setJustEvaluated] = useState(false);
+
+  /**
+   * Append a character to the current expression.
+   * If the user just got a result and presses a number, start fresh.
+   * If the user just got a result and presses an operator, chain from result.
+   */
+  const handleInput = useCallback(
+    (value) => {
+      setIsError(false);
+
+      if (justEvaluated) {
+        const isOperator = ['+', '-', '*', '/'].includes(value);
+        if (isOperator) {
+          // Chain: use the result as the start of the next expression
+          setExpression((displayResult !== '' ? displayResult : '0') + ' ' + value + ' ');
+          setDisplayResult('');
+          setJustEvaluated(false);
+          return;
+        } else {
+          // Start fresh with the new number/decimal
+          setExpression(value);
+          setDisplayResult('');
+          setJustEvaluated(false);
+          return;
+        }
+      }
+
+      setExpression((prev) => {
+        if (prev.length >= MAX_EXPRESSION_LENGTH) return prev;
+
+        // Prevent multiple consecutive operators
+        const trimmed = prev.trimEnd();
+        const lastChar = trimmed.slice(-1);
+        const isOperator = ['+', '-', '*', '/'].includes(value);
+        const lastIsOperator = ['+', '-', '*', '/'].includes(lastChar);
+
+        if (isOperator && lastIsOperator) {
+          // Replace the last operator with the new one
+          return trimmed.slice(0, -1).trimEnd() + ' ' + value + ' ';
+        }
+
+        // Add spacing around operators for readability
+        if (isOperator) {
+          return prev.trimEnd() + ' ' + value + ' ';
+        }
+
+        return prev + value;
+      });
+    },
+    [justEvaluated, displayResult]
+  );
+
+  /**
+   * Evaluate the current expression by calling the backend API.
+   */
+  const handleEquals = useCallback(async () => {
+    if (!expression.trim() || isLoading) return;
+
+    setIsLoading(true);
+    setIsError(false);
+
+    try {
+      const data = await calculate(expression.trim());
+      setDisplayResult(String(data.result));
+      setJustEvaluated(true);
+    } catch (err) {
+      setDisplayResult(err.message || 'Error');
+      setIsError(true);
+      setJustEvaluated(false);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [expression, isLoading]);
+
+  /**
+   * Clear all state — reset to initial.
+   */
+  const handleClear = useCallback(() => {
+    setExpression('');
+    setDisplayResult('');
+    setIsError(false);
+    setIsLoading(false);
+    setJustEvaluated(false);
+  }, []);
+
+  /**
+   * Delete the last character from the expression.
+   */
+  const handleBackspace = useCallback(() => {
+    if (justEvaluated) {
+      handleClear();
+      return;
+    }
+    setIsError(false);
+    setExpression((prev) => {
+      // Remove trailing space + operator + space (e.g. " + ")
+      const trimmed = prev.trimEnd();
+      const lastChar = trimmed.slice(-1);
+      if (['+', '-', '*', '/'].includes(lastChar)) {
+        return trimmed.slice(0, -1).trimEnd();
+      }
+      return prev.slice(0, -1);
+    });
+  }, [justEvaluated, handleClear]);
+
+  return {
+    expression,
+    displayResult,
+    isError,
+    isLoading,
+    handleInput,
+    handleEquals,
+    handleClear,
+    handleBackspace,
+  };
+}
+```
+
+### src/components/Display.jsx
+```javascript
+import React from 'react';
+
+function Display({ expression, result, isError, isLoading }) {
+  const showResult = result !== '' || isLoading;
+
+  return (
+    <div className="display">
+      {/* Expression row */}
+      <div className="display__expression" aria-label="Expression">
+        {expression || <span className="display__placeholder">0</span>}
+      </div>
+
+      {/* Result row */}
+      <div
+        className={`display__result ${isError ? 'display__result--error' : ''} ${
+          showResult ? 'display__result--visible' : ''
+        }`}
+        aria-label="Result"
+        aria-live="polite"
+      >
+        {isLoading ? (
+          <span className="display__loading">
+            <span className="dot">.</span>
+            <span className="dot">.</span>
+            <span className="dot">.</span>
+          </span>
+        ) : (
+          result
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default Display;
+```
+
+### src/components/Button.jsx
+```javascript
+import React from 'react';
+
+/**
+ * Reusable calculator button.
+ *
+ * @param {string}   label    - Text displayed on the button
+ * @param {function} onClick  - Click handler
+ * @param {string}   variant  - "number" | "operator" | "action" | "equals" | "zero"
+ * @param {boolean}  disabled - Whether the button is disabled
+ */
+function Button({ label, onClick, variant = 'number', disabled = false }) {
+  return (
+    <button
+      className={`btn btn--${variant}`}
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+    >
+      {label}
+    </button>
+  );
+}
+
+export default Button;
+```
+
+### src/components/Calculator.jsx
+```javascript
+import React, { useEffect, useCallback } from 'react';
+import Display from './Display';
+import Button from './Button';
+import { useCalculator } from '../hooks/useCalculator';
+
+const BUTTON_LAYOUT = [
+  { label: 'C',   variant: 'action',   action: 'clear' },
+  { label: '⌫',   variant: 'action',   action: 'backspace' },
+  { label: '(',   variant: 'operator', action: 'input', value: '(' },
+  { label: ')',   variant: 'operator', action: 'input', value: ')' },
+
+  { label: '7',   variant: 'number',   action: 'input', value: '7' },
+  { label: '8',   variant: 'number',   action: 'input', value: '8' },
+  { label: '9',   variant: 'number',   action: 'input', value: '9' },
+  { label: '÷',   variant: 'operator', action: 'input', value: '/' },
+
+  { label: '4',   variant: 'number',   action: 'input', value: '4' },
+  { label: '5',   variant: 'number',   action: 'input', value: '5' },
+  { label: '6',   variant: 'number',   action: 'input', value: '6' },
+  { label: '×',   variant: 'operator', action: 'input', value: '*' },
+
+  { label: '1',   variant: 'number',   action: 'input', value: '1' },
+  { label: '2',   variant: 'number',   action: 'input', value: '2' },
+  { label: '3',   variant: 'number',   action: 'input', value: '3' },
+  { label: '−',   variant: 'operator', action: 'input', value: '-' },
+
+  { label: '0',   variant: 'zero',     action: 'input', value: '0' },
+  { label: '.',   variant: 'number',   action: 'input', value: '.' },
+  { label: '=',   variant: 'equals',   action: 'equals' },
+  { label: '+',   variant: 'operator', action: 'input', value: '+' },
+];
+
+function Calculator() {
+  const {
+    expression,
+    displayResult,
+    isError,
+    isLoading,
+    handleInput,
+    handleEquals,
+    handleClear,
+    handleBackspace,
+  } = useCalculator();
+
+  // Keyboard support
+  const handleKeyDown = useCallback(
+    (e) => {
+      const key = e.key;
+
+      if (key >= '0' && key <= '9') { handleInput(key); return; }
+      if (key === '.') { handleInput('.'); return; }
+      if (key === '+') { handleInput('+'); return; }
+      if (key === '-') { handleInput('-'); return; }
+      if (key === '*') { handleInput('*'); return; }
+      if (key === '/') { e.preventDefault(); handleInput('/'); return; }
+      if (key === '(') { handleInput('('); return; }
+      if (key === ')') { handleInput(')'); return; }
+      if (key === 'Enter' || key === '=') { e.preventDefault(); handleEquals(); return; }
+      if (key === 'Backspace') { handleBackspace(); return; }
+      if (key === 'Escape' || key === 'c' || key === 'C') { handleClear(); return; }
+    },
+    [handleInput, handleEquals, handleClear, handleBackspace]
+  );
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
+
+  const handleButtonClick = (btn) => {
+    if (btn.action === 'clear') { handleClear(); return; }
+    if (btn.action === 'backspace') { handleBackspace(); return; }
+    if (btn.action === 'equals') { handleEquals(); return; }
+    if (btn.action === 'input') { handleInput(btn.value); return; }
+  };
+
+  return (
+    <div className="calculator" role="application" aria-label="Calculator">
+      <div className="calculator__header">
+        <span className="calculator__title">Calculator</span>
+      </div>
+
+      <Display
+        expression={expression}
+        result={displayResult}
+        isError={isError}
+        isLoading={isLoading}
+      />
+
+      <div className="calculator__grid">
+        {BUTTON_LAYOUT.map((btn, idx) => (
+          <Button
+            key={idx}
+            label={btn.label}
+            variant={btn.variant}
+            disabled={isLoading}
+            onClick={() => handleButtonClick(btn)}
+          />
+        ))}
+      </div>
+
+      <div className="calculator__footer">
+        <span>Keyboard supported · Powered by FastAPI</span>
+      </div>
+    </div>
+  );
+}
+
+export default Calculator;
+```
+
+### src/styles/calculator.css
+```css
+/* ============================================================
+   CSS Custom Properties (Design Tokens)
+   ============================================================ */
+:root {
+  --color-bg:           #0f0f13;
+  --color-surface:      #1a1a24;
+  --color-surface-2:    #22222f;
+  --color-border:       #2e2e3e;
+
+  --color-text-primary: #f0f0f5;
+  --color-text-muted:   #7a7a9a;
+  --color-text-result:  #a78bfa;
+
+  --color-number-bg:    #22222f;
+  --color-number-hover: #2c2c3e;
+  --color-number-active:#343448;
+
+  --color-op-bg:        #1e1e2e;
+  --color-op-hover:     #2a2a40;
+  --color-op-text:      #818cf8;
+
+  --color-action-bg:    #1e1e2e;
+  --color-action-hover: #2a2a40;
+  --color-action-text:  #f472b6;
+
+  --color-equals-bg:    #7c3aed;
+  --color-equals-hover: #6d28d9;
+  --color-equals-active:#5b21b6;
+  --color-equals-text:  #ffffff;
+
+  --color-error:        #f87171;
+
+  --radius-sm:  8px;
+  --radius-md:  14px;
+  --radius-lg:  20px;
+
+  --shadow-card: 0 24px 64px rgba(0, 0, 0, 0.6);
+  --shadow-btn:  0 2px 8px rgba(0, 0, 0, 0.3);
+
+  --font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  --transition:  0.15s ease;
+}
+
+/* ============================================================
+   Reset & Base
+   ============================================================ */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-family);
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 16px;
+}
+
+/* ============================================================
+   App Shell
+   ============================================================ */
+.app {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 100vh;
+}
+
+/* ============================================================
+   Calculator Card
+   ============================================================ */
+.calculator {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  width: 100%;
+  max-width: 380px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.calculator__header {
+  padding: 18px 24px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.calculator__title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.calculator__footer {
+  padding: 12px 24px 16px;
+  text-align: center;
+  font-size: 10px;
+  color: var(--color-text-muted);
+  letter-spacing: 0.04em;
+  border-top: 1px solid var(--color-border);
+}
+
+/* ============================================================
+   Display
+   ============================================================ */
+.display {
+  padding: 20px 24px 16px;
+  min-height: 110px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 6px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.display__expression {
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--color-text-muted);
+  text-align: right;
+  word-break: break-all;
+  min-height: 22px;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+}
+
+.display__placeholder {
+  opacity: 0.3;
+}
+
+.display__result {
+  font-size: 36px;
+  font-weight: 600;
+  color: var(--color-text-result);
+  text-align: right;
+  word-break: break-all;
+  line-height: 1.2;
+  min-height: 44px;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity var(--transition), transform var(--transition), color var(--transition);
+}
+
+.display__result--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.display__result--error {
+  color: var(--color-error);
+  font-size: 14px;
+  font-weight: 500;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+}
+
+/* Loading dots animation */
+.display__loading {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.dot {
+  display: inline-block;
+  font-size: 28px;
+  color: var(--color-text-muted);
+  animation: blink 1.2s infinite;
+}
+
+.dot:nth-child(2) { animation-delay: 0.2s; }
+.dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes blink {
+  0%, 80%, 100% { opacity: 0.2; }
+  40%           { opacity: 1; }
+}
+
+/* ============================================================
+   Button Grid
+   ============================================================ */
+.calculator__grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  padding: 16px;
+}
+
+/* ============================================================
+   Buttons — Base
+   ============================================================ */
+.btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 64px;
+  border: none;
+  border-radius: var(--radius-md);
+  font-family: var(--font-family);
+  font-size: 18px;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  transition:
+    background var(--transition),
+    transform var(--transition),
+    box-shadow var(--transition),
+    opacity var(--transition);
+  box-shadow: var(--shadow-btn);
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn:not(:disabled):active {
+  transform: scale(0.94);
+}
+
+/* ============================================================
+   Button Variants
+   ============================================================ */
+
+/* Number buttons */
+.btn--number {
+  background: var(--color-number-bg);
+  color: var(--color-text-primary);
+}
+.btn--number:not(:disabled):hover {
+  background: var(--color-number-hover);
+}
+.btn--number:not(:disabled):active {
+  background: var(--color-number-active);
+}
+
+/* Zero button (same style as number) */
+.btn--zero {
+  background: var(--color-number-bg);
+  color: var(--color-text-primary);
+}
+.btn--zero:not(:disabled):hover {
+  background: var(--color-number-hover);
+}
+.btn--zero:not(:disabled):active {
+  background: var(--color-number-active);
+}
+
+/* Operator buttons */
+.btn--operator {
+  background: var(--color-op-bg);
+  color: var(--color-op-text);
+  font-size: 20px;
+  font-weight: 600;
+}
+.btn--operator:not(:disabled):hover {
+  background: var(--color-op-hover);
+}
+
+/* Action buttons (C, ⌫) */
+.btn--action {
+  background: var(--color-action-bg);
+  color: var(--color-action-text);
+  font-size: 16px;
+  font-weight: 600;
+}
+.btn--action:not(:disabled):hover {
+  background: var(--color-action-hover);
+}
+
+/* Equals button */
+.btn--equals {
+  background: var(--color-equals-bg);
+  color: var(--color-equals-text);
+  font-size: 22px;
+  font-weight: 700;
+  box-shadow: 0 4px 16px rgba(124, 58, 237, 0.4);
+}
+.btn--equals:not(:disabled):hover {
+  background: var(--color-equals-hover);
+  box-shadow: 0 4px 20px rgba(124, 58, 237, 0.55);
+}
+.btn--equals:not(:disabled):active {
+  background: var(--color-equals-active);
+  transform: scale(0.94);
+}
+
+/* Focus ring for accessibility */
+.btn:focus-visible {
+  outline: 2px solid var(--color-op-text);
+  outline-offset: 2px;
+}
+
+/* ============================================================
+   Responsive
+   ============================================================ */
+@media (max-width: 420px) {
+  .calculator {
+    max-width: 100%;
+    border-radius: var(--radius-md);
+  }
+
+  .btn {
+    height: 56px;
+    font-size: 16px;
+  }
+
+  .display__result {
+    font-size: 30px;
+  }
+
+  .calculator__grid {
+    gap: 8px;
+    padding: 12px;
+  }
+}
+
+@media (max-height: 700px) {
+  .btn {
+    height: 52px;
+  }
+
+  .display {
+    min-height: 90px;
+    padding: 14px 24px 12px;
+  }
+}
+```
+
+
+==================================================
+NODE: EXECUTOR
+==================================================
+
+--- EXECUTION_LOGS ---
+
+> calculator-frontend@1.0.0 start
+> vite --host 0.0.0.0 --port 3000
+
+
+  VITE v5.4.21  ready in 171 ms
+
+  ➜  Local:   http://localhost:3000/
+  ➜  Network: http://172.17.0.2:3000/
+INFO:     Started server process [9]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+
+
+
+==================================================
+NODE: DEBUGGER
+==================================================
+
+--- ERROR_MESSAGES ---
+[]
+
+
+==================================================
+NODE: SAVER
+==================================================
+
+--- USER_IDEA ---
+Build a simple calculator app with a frontend.
+
+--- ARCHITECTURE_PLAN ---
+# Calculator App — Architecture Plan
+
+---
+
+## 📋 Overview
+
+A clean, responsive calculator web application with a React frontend and a FastAPI backend that handles arithmetic operations via a REST API.
+
+---
+
+## ✅ Functional Requirements
+
+### Frontend
+- [ ] Display a calculator UI with buttons (0–9, operators, clear, equals)
+- [ ] Show current input and running expression in a display screen
+- [ ] Support operations: **addition, subtraction, multiplication, division**
+- [ ] Handle edge cases: division by zero, decimal inputs, chained operations
+- [ ] Send expression to backend API on `=` press and display result
+- [ ] Clear/reset button (`C`) to wipe the current state
+
+### Backend
+- [ ] `POST /calculate` — Accept a math expression, evaluate it, return the result
+- [ ] Validate and sanitize input (only allow safe numeric expressions)
+- [ ] Return structured JSON responses with result or error message
+- [ ] Handle division by zero and malformed expressions gracefully
+
+---
+
+## 🗂️ File Structure
+
+```
+calculator-app/
+├── backend/
+│   ├── main.py                  # FastAPI app entry point
+│   ├── routers/
+│   │   └── calculator.py        # /calculate route definition
+│   ├── services/
+│   │   └── calculator_service.py  # Expression parsing & evaluation logic
+│   ├── models/
+│   │   └── schemas.py           # Pydantic request/response models
+│   ├── requirements.txt         # fastapi, uvicorn, pydantic
+│   └── .env                     # Environment variables (PORT, etc.)
+│
+├── frontend/
+│   ├── public/
+│   │   └── index.html
+│   ├── src/
+│   │   ├── main.jsx             # React entry point
+│   │   ├── App.jsx              # Root component
+│   │   ├── components/
+│   │   │   ├── Calculator.jsx   # Main calculator shell component
+│   │   │   ├── Display.jsx      # Expression + result display screen
+│   │   │   └── Button.jsx       # Reusable calculator button component
+│   │   ├── hooks/
+│   │   │   └── useCalculator.js # State logic: input handling, API call
+│   │   ├── services/
+│   │   │   └── api.js           # Axios/fetch wrapper for backend calls
+│   │   └── styles/
+│   │       └── calculator.css   # Calculator layout and theme styles
+│   ├── package.json
+│   └── vite.config.js           # Vite bundler config
+│
+└── README.md
+```
+
+---
+
+## 🔌 API Contract
+
+### `POST /calculate`
+
+**Request Body:**
+```json
+{
+  "expression": "8 * (3 + 2)"
+}
+```
+
+**Success Response `200`:**
+```json
+{
+  "result": 40,
+  "expression": "8 * (3 + 2)"
+}
+```
+
+**Error Response `400`:**
+```json
+{
+  "error": "Division by zero is not allowed"
+}
+```
+
+---
+
+## 🧠 Key Implementation Notes
+
+### Backend — `calculator_service.py`
+- Use Python's `ast` module (NOT `eval()`) to safely parse and evaluate expressions
+- Whitelist only: numbers, `+`, `-`, `*`, `/`, `.`, `(`, `)`
+- Raise `HTTPException(400)` for invalid or unsafe input
+
+### Frontend — `useCalculator.js`
+- Track two pieces of state: `expression` (string) and `result` (string)
+- On `=`: call `api.js → POST /calculate` and update result display
+- On `C`: reset both states to empty
+
+### Frontend — `Button.jsx`
+```
+Props: { label, onClick, variant }
+Variants: "number" | "operator" | "action"
+```
+
+---
+
+## 🛠️ Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | React 18, Vite, CSS Modules |
+| Backend | FastAPI, Uvicorn, Pydantic v2 |
+| HTTP Client | Fetch API (native) |
+| Expression Eval | Python `ast` module |
+
+---
+
+## 🚀 Getting Started (Dev)
+
+```bash
+# Backend
+cd backend
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8000
+
+# Frontend
+cd frontend
+npm install
+npm run dev  # runs on http://localhost:5173
+```
+
+> **CORS:** Configure FastAPI `CORSMiddleware` to allow `http://localhost:5173` during development.
+
+--- FRONTEND_CODE ---
+### package.json
+```json
+{
+  "name": "calculator-frontend",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "vite --host 0.0.0.0 --port 3000",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.2.1",
+    "vite": "^5.2.0"
+  }
+}
+```
+
+### vite.config.js
+```javascript
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    host: '0.0.0.0',
+    port: 3000,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+    },
+  },
+});
+```
+
+### public/index.html
+```html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Calculator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
+```
+
+### src/main.jsx
+```javascript
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+```
+
+### src/App.jsx
+```javascript
+import React from 'react';
+import Calculator from './components/Calculator';
+import './styles/calculator.css';
+
+function App() {
+  return (
+    <div className="app">
+      <Calculator />
+    </div>
+  );
+}
+
+export default App;
+```
+
+### src/services/api.js
+```javascript
+const BASE_URL = '/api';
+
+/**
+ * Send an arithmetic expression to the backend for evaluation.
+ * @param {string} expression - The math expression string.
+ * @returns {Promise<{ result: number, expression: string }>}
+ */
+export async function calculate(expression) {
+  const response = await fetch(`${BASE_URL}/calculate`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ expression }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    // FastAPI returns { detail: "..." } on 400
+    throw new Error(data.detail || 'An unexpected error occurred.');
+  }
+
+  return data;
+}
+```
+
+### src/hooks/useCalculator.js
+```javascript
+import { useState, useCallback } from 'react';
+import { calculate } from '../services/api';
+
+const MAX_EXPRESSION_LENGTH = 64;
+
+export function useCalculator() {
+  const [expression, setExpression] = useState('');
+  const [displayResult, setDisplayResult] = useState('');
+  const [isError, setIsError] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [justEvaluated, setJustEvaluated] = useState(false);
+
+  /**
+   * Append a character to the current expression.
+   * If the user just got a result and presses a number, start fresh.
+   * If the user just got a result and presses an operator, chain from result.
+   */
+  const handleInput = useCallback(
+    (value) => {
+      setIsError(false);
+
+      if (justEvaluated) {
+        const isOperator = ['+', '-', '*', '/'].includes(value);
+        if (isOperator) {
+          // Chain: use the result as the start of the next expression
+          setExpression((displayResult !== '' ? displayResult : '0') + ' ' + value + ' ');
+          setDisplayResult('');
+          setJustEvaluated(false);
+          return;
+        } else {
+          // Start fresh with the new number/decimal
+          setExpression(value);
+          setDisplayResult('');
+          setJustEvaluated(false);
+          return;
+        }
+      }
+
+      setExpression((prev) => {
+        if (prev.length >= MAX_EXPRESSION_LENGTH) return prev;
+
+        // Prevent multiple consecutive operators
+        const trimmed = prev.trimEnd();
+        const lastChar = trimmed.slice(-1);
+        const isOperator = ['+', '-', '*', '/'].includes(value);
+        const lastIsOperator = ['+', '-', '*', '/'].includes(lastChar);
+
+        if (isOperator && lastIsOperator) {
+          // Replace the last operator with the new one
+          return trimmed.slice(0, -1).trimEnd() + ' ' + value + ' ';
+        }
+
+        // Add spacing around operators for readability
+        if (isOperator) {
+          return prev.trimEnd() + ' ' + value + ' ';
+        }
+
+        return prev + value;
+      });
+    },
+    [justEvaluated, displayResult]
+  );
+
+  /**
+   * Evaluate the current expression by calling the backend API.
+   */
+  const handleEquals = useCallback(async () => {
+    if (!expression.trim() || isLoading) return;
+
+    setIsLoading(true);
+    setIsError(false);
+
+    try {
+      const data = await calculate(expression.trim());
+      setDisplayResult(String(data.result));
+      setJustEvaluated(true);
+    } catch (err) {
+      setDisplayResult(err.message || 'Error');
+      setIsError(true);
+      setJustEvaluated(false);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [expression, isLoading]);
+
+  /**
+   * Clear all state — reset to initial.
+   */
+  const handleClear = useCallback(() => {
+    setExpression('');
+    setDisplayResult('');
+    setIsError(false);
+    setIsLoading(false);
+    setJustEvaluated(false);
+  }, []);
+
+  /**
+   * Delete the last character from the expression.
+   */
+  const handleBackspace = useCallback(() => {
+    if (justEvaluated) {
+      handleClear();
+      return;
+    }
+    setIsError(false);
+    setExpression((prev) => {
+      // Remove trailing space + operator + space (e.g. " + ")
+      const trimmed = prev.trimEnd();
+      const lastChar = trimmed.slice(-1);
+      if (['+', '-', '*', '/'].includes(lastChar)) {
+        return trimmed.slice(0, -1).trimEnd();
+      }
+      return prev.slice(0, -1);
+    });
+  }, [justEvaluated, handleClear]);
+
+  return {
+    expression,
+    displayResult,
+    isError,
+    isLoading,
+    handleInput,
+    handleEquals,
+    handleClear,
+    handleBackspace,
+  };
+}
+```
+
+### src/components/Display.jsx
+```javascript
+import React from 'react';
+
+function Display({ expression, result, isError, isLoading }) {
+  const showResult = result !== '' || isLoading;
+
+  return (
+    <div className="display">
+      {/* Expression row */}
+      <div className="display__expression" aria-label="Expression">
+        {expression || <span className="display__placeholder">0</span>}
+      </div>
+
+      {/* Result row */}
+      <div
+        className={`display__result ${isError ? 'display__result--error' : ''} ${
+          showResult ? 'display__result--visible' : ''
+        }`}
+        aria-label="Result"
+        aria-live="polite"
+      >
+        {isLoading ? (
+          <span className="display__loading">
+            <span className="dot">.</span>
+            <span className="dot">.</span>
+            <span className="dot">.</span>
+          </span>
+        ) : (
+          result
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default Display;
+```
+
+### src/components/Button.jsx
+```javascript
+import React from 'react';
+
+/**
+ * Reusable calculator button.
+ *
+ * @param {string}   label    - Text displayed on the button
+ * @param {function} onClick  - Click handler
+ * @param {string}   variant  - "number" | "operator" | "action" | "equals" | "zero"
+ * @param {boolean}  disabled - Whether the button is disabled
+ */
+function Button({ label, onClick, variant = 'number', disabled = false }) {
+  return (
+    <button
+      className={`btn btn--${variant}`}
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+    >
+      {label}
+    </button>
+  );
+}
+
+export default Button;
+```
+
+### src/components/Calculator.jsx
+```javascript
+import React, { useEffect, useCallback } from 'react';
+import Display from './Display';
+import Button from './Button';
+import { useCalculator } from '../hooks/useCalculator';
+
+const BUTTON_LAYOUT = [
+  { label: 'C',   variant: 'action',   action: 'clear' },
+  { label: '⌫',   variant: 'action',   action: 'backspace' },
+  { label: '(',   variant: 'operator', action: 'input', value: '(' },
+  { label: ')',   variant: 'operator', action: 'input', value: ')' },
+
+  { label: '7',   variant: 'number',   action: 'input', value: '7' },
+  { label: '8',   variant: 'number',   action: 'input', value: '8' },
+  { label: '9',   variant: 'number',   action: 'input', value: '9' },
+  { label: '÷',   variant: 'operator', action: 'input', value: '/' },
+
+  { label: '4',   variant: 'number',   action: 'input', value: '4' },
+  { label: '5',   variant: 'number',   action: 'input', value: '5' },
+  { label: '6',   variant: 'number',   action: 'input', value: '6' },
+  { label: '×',   variant: 'operator', action: 'input', value: '*' },
+
+  { label: '1',   variant: 'number',   action: 'input', value: '1' },
+  { label: '2',   variant: 'number',   action: 'input', value: '2' },
+  { label: '3',   variant: 'number',   action: 'input', value: '3' },
+  { label: '−',   variant: 'operator', action: 'input', value: '-' },
+
+  { label: '0',   variant: 'zero',     action: 'input', value: '0' },
+  { label: '.',   variant: 'number',   action: 'input', value: '.' },
+  { label: '=',   variant: 'equals',   action: 'equals' },
+  { label: '+',   variant: 'operator', action: 'input', value: '+' },
+];
+
+function Calculator() {
+  const {
+    expression,
+    displayResult,
+    isError,
+    isLoading,
+    handleInput,
+    handleEquals,
+    handleClear,
+    handleBackspace,
+  } = useCalculator();
+
+  // Keyboard support
+  const handleKeyDown = useCallback(
+    (e) => {
+      const key = e.key;
+
+      if (key >= '0' && key <= '9') { handleInput(key); return; }
+      if (key === '.') { handleInput('.'); return; }
+      if (key === '+') { handleInput('+'); return; }
+      if (key === '-') { handleInput('-'); return; }
+      if (key === '*') { handleInput('*'); return; }
+      if (key === '/') { e.preventDefault(); handleInput('/'); return; }
+      if (key === '(') { handleInput('('); return; }
+      if (key === ')') { handleInput(')'); return; }
+      if (key === 'Enter' || key === '=') { e.preventDefault(); handleEquals(); return; }
+      if (key === 'Backspace') { handleBackspace(); return; }
+      if (key === 'Escape' || key === 'c' || key === 'C') { handleClear(); return; }
+    },
+    [handleInput, handleEquals, handleClear, handleBackspace]
+  );
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
+
+  const handleButtonClick = (btn) => {
+    if (btn.action === 'clear') { handleClear(); return; }
+    if (btn.action === 'backspace') { handleBackspace(); return; }
+    if (btn.action === 'equals') { handleEquals(); return; }
+    if (btn.action === 'input') { handleInput(btn.value); return; }
+  };
+
+  return (
+    <div className="calculator" role="application" aria-label="Calculator">
+      <div className="calculator__header">
+        <span className="calculator__title">Calculator</span>
+      </div>
+
+      <Display
+        expression={expression}
+        result={displayResult}
+        isError={isError}
+        isLoading={isLoading}
+      />
+
+      <div className="calculator__grid">
+        {BUTTON_LAYOUT.map((btn, idx) => (
+          <Button
+            key={idx}
+            label={btn.label}
+            variant={btn.variant}
+            disabled={isLoading}
+            onClick={() => handleButtonClick(btn)}
+          />
+        ))}
+      </div>
+
+      <div className="calculator__footer">
+        <span>Keyboard supported · Powered by FastAPI</span>
+      </div>
+    </div>
+  );
+}
+
+export default Calculator;
+```
+
+### src/styles/calculator.css
+```css
+/* ============================================================
+   CSS Custom Properties (Design Tokens)
+   ============================================================ */
+:root {
+  --color-bg:           #0f0f13;
+  --color-surface:      #1a1a24;
+  --color-surface-2:    #22222f;
+  --color-border:       #2e2e3e;
+
+  --color-text-primary: #f0f0f5;
+  --color-text-muted:   #7a7a9a;
+  --color-text-result:  #a78bfa;
+
+  --color-number-bg:    #22222f;
+  --color-number-hover: #2c2c3e;
+  --color-number-active:#343448;
+
+  --color-op-bg:        #1e1e2e;
+  --color-op-hover:     #2a2a40;
+  --color-op-text:      #818cf8;
+
+  --color-action-bg:    #1e1e2e;
+  --color-action-hover: #2a2a40;
+  --color-action-text:  #f472b6;
+
+  --color-equals-bg:    #7c3aed;
+  --color-equals-hover: #6d28d9;
+  --color-equals-active:#5b21b6;
+  --color-equals-text:  #ffffff;
+
+  --color-error:        #f87171;
+
+  --radius-sm:  8px;
+  --radius-md:  14px;
+  --radius-lg:  20px;
+
+  --shadow-card: 0 24px 64px rgba(0, 0, 0, 0.6);
+  --shadow-btn:  0 2px 8px rgba(0, 0, 0, 0.3);
+
+  --font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  --transition:  0.15s ease;
+}
+
+/* ============================================================
+   Reset & Base
+   ============================================================ */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-family);
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 16px;
+}
+
+/* ============================================================
+   App Shell
+   ============================================================ */
+.app {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 100vh;
+}
+
+/* ============================================================
+   Calculator Card
+   ============================================================ */
+.calculator {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  width: 100%;
+  max-width: 380px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.calculator__header {
+  padding: 18px 24px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.calculator__title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.calculator__footer {
+  padding: 12px 24px 16px;
+  text-align: center;
+  font-size: 10px;
+  color: var(--color-text-muted);
+  letter-spacing: 0.04em;
+  border-top: 1px solid var(--color-border);
+}
+
+/* ============================================================
+   Display
+   ============================================================ */
+.display {
+  padding: 20px 24px 16px;
+  min-height: 110px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 6px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.display__expression {
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--color-text-muted);
+  text-align: right;
+  word-break: break-all;
+  min-height: 22px;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+}
+
+.display__placeholder {
+  opacity: 0.3;
+}
+
+.display__result {
+  font-size: 36px;
+  font-weight: 600;
+  color: var(--color-text-result);
+  text-align: right;
+  word-break: break-all;
+  line-height: 1.2;
+  min-height: 44px;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity var(--transition), transform var(--transition), color var(--transition);
+}
+
+.display__result--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.display__result--error {
+  color: var(--color-error);
+  font-size: 14px;
+  font-weight: 500;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+}
+
+/* Loading dots animation */
+.display__loading {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.dot {
+  display: inline-block;
+  font-size: 28px;
+  color: var(--color-text-muted);
+  animation: blink 1.2s infinite;
+}
+
+.dot:nth-child(2) { animation-delay: 0.2s; }
+.dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes blink {
+  0%, 80%, 100% { opacity: 0.2; }
+  40%           { opacity: 1; }
+}
+
+/* ============================================================
+   Button Grid
+   ============================================================ */
+.calculator__grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  padding: 16px;
+}
+
+/* ============================================================
+   Buttons — Base
+   ============================================================ */
+.btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 64px;
+  border: none;
+  border-radius: var(--radius-md);
+  font-family: var(--font-family);
+  font-size: 18px;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  transition:
+    background var(--transition),
+    transform var(--transition),
+    box-shadow var(--transition),
+    opacity var(--transition);
+  box-shadow: var(--shadow-btn);
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn:not(:disabled):active {
+  transform: scale(0.94);
+}
+
+/* ============================================================
+   Button Variants
+   ============================================================ */
+
+/* Number buttons */
+.btn--number {
+  background: var(--color-number-bg);
+  color: var(--color-text-primary);
+}
+.btn--number:not(:disabled):hover {
+  background: var(--color-number-hover);
+}
+.btn--number:not(:disabled):active {
+  background: var(--color-number-active);
+}
+
+/* Zero button (same style as number) */
+.btn--zero {
+  background: var(--color-number-bg);
+  color: var(--color-text-primary);
+}
+.btn--zero:not(:disabled):hover {
+  background: var(--color-number-hover);
+}
+.btn--zero:not(:disabled):active {
+  background: var(--color-number-active);
+}
+
+/* Operator buttons */
+.btn--operator {
+  background: var(--color-op-bg);
+  color: var(--color-op-text);
+  font-size: 20px;
+  font-weight: 600;
+}
+.btn--operator:not(:disabled):hover {
+  background: var(--color-op-hover);
+}
+
+/* Action buttons (C, ⌫) */
+.btn--action {
+  background: var(--color-action-bg);
+  color: var(--color-action-text);
+  font-size: 16px;
+  font-weight: 600;
+}
+.btn--action:not(:disabled):hover {
+  background: var(--color-action-hover);
+}
+
+/* Equals button */
+.btn--equals {
+  background: var(--color-equals-bg);
+  color: var(--color-equals-text);
+  font-size: 22px;
+  font-weight: 700;
+  box-shadow: 0 4px 16px rgba(124, 58, 237, 0.4);
+}
+.btn--equals:not(:disabled):hover {
+  background: var(--color-equals-hover);
+  box-shadow: 0 4px 20px rgba(124, 58, 237, 0.55);
+}
+.btn--equals:not(:disabled):active {
+  background: var(--color-equals-active);
+  transform: scale(0.94);
+}
+
+/* Focus ring for accessibility */
+.btn:focus-visible {
+  outline: 2px solid var(--color-op-text);
+  outline-offset: 2px;
+}
+
+/* ============================================================
+   Responsive
+   ============================================================ */
+@media (max-width: 420px) {
+  .calculator {
+    max-width: 100%;
+    border-radius: var(--radius-md);
+  }
+
+  .btn {
+    height: 56px;
+    font-size: 16px;
+  }
+
+  .display__result {
+    font-size: 30px;
+  }
+
+  .calculator__grid {
+    gap: 8px;
+    padding: 12px;
+  }
+}
+
+@media (max-height: 700px) {
+  .btn {
+    height: 52px;
+  }
+
+  .display {
+    min-height: 90px;
+    padding: 14px 24px 12px;
+  }
+}
+```
+
+--- BACKEND_CODE ---
+### app/main.py
+```python
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.routers import calculator
+
+app = FastAPI(
+    title="Calculator API",
+    description="A simple calculator API that evaluates arithmetic expressions safely.",
+    version="1.0.0",
+)
+
+# CORS configuration for frontend development server
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(calculator.router)
+
+
+@app.get("/health", tags=["Health"])
+def health_check():
+    """Simple health check endpoint."""
+    return {"status": "ok"}
+```
+
+### app/routers/calculator.py
+```python
+from fastapi import APIRouter, HTTPException
+
+from app.models.schemas import CalculationRequest, CalculationResponse, ErrorResponse
+from app.services.calculator_service import evaluate_expression, CalculatorError
+
+router = APIRouter(
+    prefix="/calculate",
+    tags=["Calculator"],
+)
+
+
+@router.post(
+    "",
+    response_model=CalculationResponse,
+    responses={
+        400: {"model": ErrorResponse, "description": "Invalid expression or math error"},
+    },
+    summary="Evaluate a math expression",
+    description="Accepts a safe arithmetic expression string and returns the evaluated result.",
+)
+def calculate(payload: CalculationRequest):
+    """
+    Evaluate the provided arithmetic expression and return the result.
+
+    - Supports: `+`, `-`, `*`, `/`, `(`, `)`, decimal numbers
+    - Rejects: unsafe input, division by zero, malformed expressions
+    """
+    try:
+        result = evaluate_expression(payload.expression)
+    except CalculatorError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return CalculationResponse(result=result, expression=payload.expression)
+```
+
+### app/services/calculator_service.py
+```python
+import ast
+import operator
+import re
+from typing import Union
+
+# ---------------------------------------------------------------------------
+# Custom exception
+# ---------------------------------------------------------------------------
+
+class CalculatorError(Exception):
+    """Raised when an expression cannot be evaluated safely."""
+
+
+# ---------------------------------------------------------------------------
+# Whitelist of allowed AST node types and binary operators
+# ---------------------------------------------------------------------------
+
+_ALLOWED_OPERATORS: dict[type, callable] = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.USub: operator.neg,
+    ast.UAdd: operator.pos,
+}
+
+_ALLOWED_NODE_TYPES = (
+    ast.Expression,
+    ast.BinOp,
+    ast.UnaryOp,
+    ast.Constant,
+    ast.Add,
+    ast.Sub,
+    ast.Mult,
+    ast.Div,
+    ast.USub,
+    ast.UAdd,
+)
+
+# ---------------------------------------------------------------------------
+# Input sanitisation
+# ---------------------------------------------------------------------------
+
+# Only digits, whitespace, decimal points, and the four operators + parentheses
+_SAFE_PATTERN = re.compile(r"^[\d\s\+\-\*\/\.\(\)]+$")
+
+
+def _sanitise(expression: str) -> str:
+    """
+    Strip leading/trailing whitespace and verify the expression contains only
+    characters that are valid in a simple arithmetic expression.
+
+    Raises CalculatorError for any disallowed characters.
+    """
+    expr = expression.strip()
+
+    if not expr:
+        raise CalculatorError("Expression must not be empty.")
+
+    if not _SAFE_PATTERN.match(expr):
+        raise CalculatorError(
+            "Expression contains invalid characters. "
+            "Only numbers, +, -, *, /, ., (, ) are allowed."
+        )
+
+    return expr
+
+
+# ---------------------------------------------------------------------------
+# AST-based evaluator
+# ---------------------------------------------------------------------------
+
+def _eval_node(node: ast.AST) -> Union[int, float]:
+    """
+    Recursively evaluate an AST node.
+
+    Only whitelisted node types are permitted; anything else raises
+    CalculatorError to prevent code injection.
+    """
+    if not isinstance(node, _ALLOWED_NODE_TYPES):
+        raise CalculatorError(
+            f"Unsupported operation or expression type: {type(node).__name__}"
+        )
+
+    if isinstance(node, ast.Expression):
+        return _eval_node(node.body)
+
+    if isinstance(node, ast.Constant):
+        if not isinstance(node.value, (int, float)):
+            raise CalculatorError(
+                f"Unsupported literal type: {type(node.value).__name__}"
+            )
+        return node.value
+
+    if isinstance(node, ast.BinOp):
+        op_type = type(node.op)
+        if op_type not in _ALLOWED_OPERATORS:
+            raise CalculatorError(f"Unsupported binary operator: {op_type.__name__}")
+
+        left = _eval_node(node.left)
+        right = _eval_node(node.right)
+
+        # Guard against division by zero before calling the operator
+        if op_type is ast.Div:
+            if right == 0:
+                raise CalculatorError("Division by zero is not allowed.")
+
+        return _ALLOWED_OPERATORS[op_type](left, right)
+
+    if isinstance(node, ast.UnaryOp):
+        op_type = type(node.op)
+        if op_type not in _ALLOWED_OPERATORS:
+            raise CalculatorError(f"Unsupported unary operator: {op_type.__name__}")
+
+        operand = _eval_node(node.operand)
+        return _ALLOWED_OPERATORS[op_type](operand)
+
+    # Should never reach here given the isinstance guard above, but be explicit.
+    raise CalculatorError("Unexpected node type encountered during evaluation.")
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def evaluate_expression(expression: str) -> Union[int, float]:
+    """
+    Safely evaluate an arithmetic expression string.
+
+    Steps:
+    1. Sanitise the raw string (whitelist check).
+    2. Parse it into an AST using :func:`ast.parse`.
+    3. Walk the AST, allowing only numeric literals and the four basic
+       arithmetic operators.
+    4. Return the numeric result.
+
+    Args:
+        expression: A string such as ``"8 * (3 + 2)"`` or ``"10 / 2.5"``.
+
+    Returns:
+        The numeric result as an :class:`int` or :class:`float`.
+
+    Raises:
+        CalculatorError: For invalid input, unsafe constructs, or math errors.
+    """
+    sanitised = _sanitise(expression)
+
+    try:
+        tree = ast.parse(sanitised, mode="eval")
+    except SyntaxError as exc:
+        raise CalculatorError(
+            f"Malformed expression: {exc.msg}"
+        ) from exc
+
+    result = _eval_node(tree)
+
+    # Normalise -0.0 → 0
+    if result == 0:
+        return 0
+
+    # Return an int when the result is a whole number (e.g. 40.0 → 40)
+    if isinstance(result, float) and result.is_integer():
+        return int(result)
+
+    return result
+```
+
+### app/models/schemas.py
+```python
+from typing import Union
+
+from pydantic import BaseModel, Field, field_validator
+
+
+class CalculationRequest(BaseModel):
+    """Request body for the /calculate endpoint."""
+
+    expression: str = Field(
+        ...,
+        min_length=1,
+        max_length=256,
+        examples=["8 * (3 + 2)", "10 / 2.5", "100 - 37 + 3"],
+        description=(
+            "An arithmetic expression using numbers and the operators "
+            "+, -, *, /. Parentheses are supported."
+        ),
+    )
+
+    @field_validator("expression")
+    @classmethod
+    def expression_must_not_be_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Expression must not be blank or whitespace only.")
+        return stripped
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {"expression": "8 * (3 + 2)"},
+                {"expression": "100 / 4"},
+            ]
+        }
+    }
+
+
+class CalculationResponse(BaseModel):
+    """Successful response from the /calculate endpoint."""
+
+    result: Union[int, float] = Field(
+        ...,
+        description="The numeric result of the evaluated expression.",
+        examples=[40, 25.5],
+    )
+    expression: str = Field(
+        ...,
+        description="The original expression that was evaluated.",
+        examples=["8 * (3 + 2)"],
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {"result": 40, "expression": "8 * (3 + 2)"},
+            ]
+        }
+    }
+
+
+class ErrorResponse(BaseModel):
+    """Error response returned when evaluation fails."""
+
+    detail: str = Field(
+        ...,
+        description="Human-readable description of what went wrong.",
+        examples=["Division by zero is not allowed."],
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {"detail": "Division by zero is not allowed."},
+                {"detail": "Expression contains invalid characters."},
+            ]
+        }
+    }
+```
+
+### requirements.txt
+```python
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+pydantic>=2.7.0
+```
+
+--- EXECUTION_LOGS ---
+
+> calculator-frontend@1.0.0 start
+> vite --host 0.0.0.0 --port 3000
+
+
+  VITE v5.4.21  ready in 171 ms
+
+  ➜  Local:   http://localhost:3000/
+  ➜  Network: http://172.17.0.2:3000/
+INFO:     Started server process [9]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+
+
+--- ERROR_MESSAGES ---
+[]
+
+--- ITERATION_COUNT ---
+0

@@ -1,0 +1,211 @@
+.formContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.inputGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.inputWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input {
+  width: 100%;
+  padding: 14px 52px 14px 16px;
+  background: var(--color-input-bg);
+  border: 1.5px solid var(--color-input-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: 18px;
+  font-weight: 500;
+  font-family: var(--font-family);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
+  outline: none;
+  box-shadow: var(--shadow-input);
+}
+
+.input::placeholder {
+  color: var(--color-text-muted);
+  font-weight: 400;
+  font-size: 15px;
+}
+
+.input:focus {
+  border-color: var(--color-input-focus);
+  background: #2a2e4a;
+  box-shadow: 0 0 0 3px rgba(108, 99, 255, 0.2), var(--shadow-input);
+}
+
+.input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.inputSuffix {
+  position: absolute;
+  right: 14px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-primary);
+  pointer-events: none;
+  user-select: none;
+}
+
+.scalesRow {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.selectGroup {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.selectWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.select {
+  width: 100%;
+  padding: 12px 36px 12px 14px;
+  background: var(--color-input-bg);
+  border: 1.5px solid var(--color-input-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-weight: 500;
+  font-family: var(--font-family);
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  outline: none;
+  box-shadow: var(--shadow-input);
+}
+
+.select:focus {
+  border-color: var(--color-input-focus);
+  box-shadow: 0 0 0 3px rgba(108, 99, 255, 0.2), var(--shadow-input);
+}
+
+.select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.selectArrow {
+  position: absolute;
+  right: 12px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  pointer-events: none;
+  user-select: none;
+}
+
+.arrowDivider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 2px;
+  flex-shrink: 0;
+}
+
+.arrowIcon {
+  font-size: 20px;
+  color: var(--color-primary);
+  font-weight: 300;
+  line-height: 1;
+}
+
+.submitButton {
+  width: 100%;
+  padding: 15px 24px;
+  background: linear-gradient(135deg, var(--color-primary) 0%, #8b5cf6 100%);
+  border: none;
+  border-radius: var(--radius-md);
+  color: white;
+  font-size: 16px;
+  font-weight: 600;
+  font-family: var(--font-family);
+  cursor: pointer;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast), opacity var(--transition-fast);
+  box-shadow: var(--shadow-button);
+  letter-spacing: 0.3px;
+  margin-top: 4px;
+}
+
+.submitButton:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 28px rgba(108, 99, 255, 0.55);
+}
+
+.submitButton:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: var(--shadow-button);
+}
+
+.submitButton:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.buttonContent {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.buttonIcon {
+  font-size: 18px;
+  font-weight: 400;
+}
+
+.buttonSpinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 400px) {
+  .scalesRow {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .arrowDivider {
+    transform: rotate(90deg);
+    padding-bottom: 0;
+  }
+}
