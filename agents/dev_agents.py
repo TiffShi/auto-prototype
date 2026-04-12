@@ -5,6 +5,61 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
 from sandbox.executor import SandboxExecutor
 
+def devops_agent_node(state: AutoPrototypeState) -> dict:
+    print("--- DevOps Agent Active ---")
+    
+    llm = ChatAnthropic(model="claude-sonnet-4-6", temperature=0.1)
+    
+    system_prompt = """You are a Principal DevOps Engineer. 
+    Your job is to read the generated frontend and backend code and provision the exact Docker infrastructure required to run it.
+
+    You must output exactly two files using this format:
+    ### Dockerfile
+    ```dockerfile
+    [CODE]
+    ```
+    ### startup.sh
+    ```bash
+    [CODE]
+    ```
+
+    CRITICAL RULES:
+    1. The Dockerfile MUST use a base image that supports both the frontend and backend languages (e.g., node:18-bullseye, or a multi-stage build, or python:3.11 with Node installed).
+    2. The Dockerfile MUST copy the `backend/` and `frontend/` folders into the container and install all dependencies (e.g., pip install, npm install).
+    3. The `startup.sh` script MUST start BOTH servers in the background and keep the container alive. Use `&` to run processes in the background and `wait` at the end.
+    4. Ensure the frontend proxy ports match the backend exposure ports.
+    """
+    
+    human_prompt = "Stack Selected: {stack}\n\nArchitecture:\n{plan}\n\nBackend Code Summary:\n{backend}\n\nFrontend Code Summary:\n{frontend}"
+    
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", system_prompt),
+        ("human", human_prompt)
+    ])
+    
+    # We only send a summary (first 1000 chars) of the code to save tokens, 
+    # as DevOps usually just needs to see the package.json/requirements.txt
+    backend_snippet = state.get("backend_code", "")[:1000]
+    frontend_snippet = state.get("frontend_code", "")[:1000]
+    
+    response = (prompt | llm).invoke({
+        "stack": state.get("selected_stack_name", "Unknown"),
+        "plan": state.get("architecture_plan", ""),
+        "backend": backend_snippet,
+        "frontend": frontend_snippet
+    })
+    
+    content = response.content
+    
+    # Parse the outputs using Regex
+    dockerfile_match = re.search(r"###\s*Dockerfile\s*```\w*\n(.*?)```", content, re.DOTALL)
+    startup_match = re.search(r"###\s*startup\.sh\s*```\w*\n(.*?)```", content, re.DOTALL)
+    
+    return {
+        "dockerfile_content": dockerfile_match.group(1).strip() if dockerfile_match else None,
+        "startup_script_content": startup_match.group(1).strip() if startup_match else None
+    }
+
 # --- DIFF UTILITY FUNCTION ---
 def apply_patches(original_code: str, patch_text: str) -> str:
     """Finds SEARCH/REPLACE blocks in the LLM response and applies them to the original code."""
@@ -72,16 +127,18 @@ def backend_agent_node(state: AutoPrototypeState) -> dict:
         return {"backend_code": new_code}
         
     else:
-        system_prompt = """You are a Senior Backend Engineer. Output the full FastAPI source code.
+        stack_name = state.get("selected_stack_name", "Python/FastAPI")
+        system_prompt = f"""You are a Senior Backend Engineer. Output the full backend source code for the {stack_name} stack.
         Use this exact format for every file:
-        ### app/path/to/file.py
-        ```python
+        ### backend/path/to/file.ext
+        ```[language]
         [CODE]
         ```
         CRITICAL RULES:
-        1. BOUNDARY LIMIT: You are strictly confined to backend logic. You are only authorized to output Python files (.py) and requirements.txt. 
-        2. IMPORT RULE: The server will be executed from the root 'backend' folder using `uvicorn app.main:app`. Therefore, ALL internal Python imports MUST be absolute and start with the `app.` prefix (e.g., `from app.routers import x`).
-        3. NO INFRASTRUCTURE: Do not generate any deployment or container configuration files. The execution environment is managed externally."""
+        1. BOUNDARY LIMIT: You are strictly confined to backend logic. Output only backend source files and the appropriate dependency file (e.g., requirements.txt, package.json, etc.). 
+        2. NO INFRASTRUCTURE: Do not generate any Dockerfiles or startup scripts. The DevOps agent will handle that.
+        3. NETWORKING: Expose your API on a standard port for your framework. Document this port clearly in your comments so the frontend and DevOps agents know what to target."""
+        
         human_prompt = "Plan:\n{plan}"
 
         prompt = ChatPromptTemplate.from_messages([
@@ -146,18 +203,19 @@ def frontend_agent_node(state: AutoPrototypeState) -> dict:
         return {"frontend_code": new_code}
         
     else:
-        system_prompt = """You are a Senior Frontend Engineer. Output the full React source code.
-        Use this exact format for every file (including src/ and public/):
-        ### src/components/Header.js
-        ```javascript
+        stack_name = state.get("selected_stack_name", "React Vite")
+        system_prompt = f"""You are a Senior Frontend Engineer. Output the full frontend source code for the {stack_name} stack.
+        Use this exact format for every file:
+        ### frontend/path/to/file.ext
+        ```[language]
         [CODE]
         ```
         CRITICAL RULES:
-        1. BOUNDARY LIMIT: You are strictly confined to frontend web logic. You are only authorized to output React components (.jsx/.js), styles (.css), Vite configurations, and standard web assets (index.html, package.json) index.html should only be in the frontend directory and not the public directory if it is using vite.
-        2. EXECUTION RULE: The frontend will be executed inside a container via `npm start`. You MUST include exactly `"start": "vite --host 0.0.0.0 --port 3000"` in the scripts section of your `package.json`.
-        3. API CONNECTION: The FastAPI backend will be running on port 8000. You MUST configure `vite.config.js` to proxy `/api` requests to `http://localhost:8000` to avoid CORS issues."""
+        1. BOUNDARY LIMIT: You are strictly confined to frontend web logic. Output only frontend components, styles, configurations, and standard web assets.
+        2. API CONNECTION: You must configure your frontend to proxy API requests to the backend. Read the backend code to determine the correct port to proxy to.
+        3. SCRIPTS: Ensure your dependency file (e.g., package.json) includes a standard start script (like `npm start` or `npm run dev`) that binds to host `0.0.0.0`."""
         
-        human_prompt = "Plan:\n{plan}\n\nBackend Source Code:\n{backend_code}"
+        human_prompt = "Plan:\n{plan}\n\nBackend Source Code (Use this to find the API port):\n{backend_code}"
     
         prompt = ChatPromptTemplate.from_messages([
             ("system", system_prompt), 
@@ -199,9 +257,9 @@ def execution_node(state: AutoPrototypeState) -> dict:
     # 1. Write the current state to disk so Docker can see it
     write_files_to_disk(state)
     
-    # 2. Run the sandbox test
+    # 2. Run the sandbox test (MUST PASS STATE HERE)
     sandbox = SandboxExecutor()
-    logs = sandbox.test_prototype_and_get_logs()
+    logs = sandbox.test_prototype_and_get_logs(state) 
     
     return {"execution_logs": logs}
 

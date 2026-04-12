@@ -1,195 +1,105 @@
-# Temperature Converter – Architecture Plan
+# Banking App — Architecture Plan
+
+## Overview
+A simple banking application that allows users to deposit and withdraw cash. Account balance is stored in-memory on the Spring Boot backend. Vue handles the frontend UI.
 
 ---
 
-## 1. Product Overview
+## Functional Requirements
 
-A lightweight web app where a user inputs a numeric temperature value, selects a source scale and a target scale, submits the form, and receives the precise converted value — calculated server-side.
+### Core Features
+1. **View Balance** — Display the current account balance
+2. **Deposit Cash** — Input an amount and add it to the balance
+3. **Withdraw Cash** — Input an amount and subtract it from the balance
+4. **Transaction Validation** — Prevent overdrafts (insufficient funds) and negative/zero inputs
+5. **Transaction History** — Display a log of past deposits and withdrawals (in-memory)
 
 ---
 
-## 2. Tech Stack
+## Tech Stack
 
 | Layer | Technology |
 |---|---|
-| Frontend | React (Vite) |
-| Backend | FastAPI (Python) |
-| HTTP Client | Axios |
-| Styling | CSS Modules |
-| Package Mgmt | pip + npm |
+| Frontend | Vue 3 (Composition API) |
+| Backend | Spring Boot 3 (Java) |
+| Storage | In-Memory (Java object/singleton) |
+| API Style | REST |
+| Styling | CSS |
 
 ---
 
-## 3. Functional Requirements
+## API Endpoints
 
-### FR-1 — User Input
-- A numeric text field accepts the temperature value (integers and decimals, including negatives)
-- Two dropdowns: **From Scale** and **To Scale**, each containing `Celsius`, `Fahrenheit`, `Kelvin`
-- A **Convert** button triggers the API call
-
-### FR-2 — Conversion Logic (Backend)
-- All conversions route through Kelvin as the canonical intermediate unit
-- Supported pairs: C↔F, C↔K, F↔K (and same-scale identity)
-- Returns a JSON response with the result as a full-precision float
-- Validates input: rejects non-numeric values and temperatures below absolute zero
-
-### FR-3 — Result Display
-- The converted result is displayed clearly below the form
-- Shows: `{input} °{FromScale} = {result} °{ToScale}`
-- Handles and displays backend validation errors gracefully
-
-### FR-4 — Edge Cases
-- Same input/output scale → returns the original value
-- Absolute zero enforcement (e.g., reject < −273.15 °C)
-- Empty or non-numeric input → frontend blocks submission before API call
+| Method | Endpoint | Description | Request Body | Response |
+|---|---|---|---|---|
+| GET | `/api/account/balance` | Get current balance | None | `{ balance: number }` |
+| POST | `/api/account/deposit` | Deposit cash | `{ amount: number }` | `{ balance: number, message: string }` |
+| POST | `/api/account/withdraw` | Withdraw cash | `{ amount: number }` | `{ balance: number, message: string }` |
+| GET | `/api/account/transactions` | Get transaction history | None | `[ { type, amount, timestamp } ]` |
 
 ---
 
-## 4. API Design
-
-### `POST /convert`
-
-**Request Body**
-```json
-{
-  "value": 100.0,
-  "from_scale": "Celsius",
-  "to_scale": "Fahrenheit"
-}
-```
-
-**Success Response** `200 OK`
-```json
-{
-  "result": 212.0,
-  "from_scale": "Celsius",
-  "to_scale": "Fahrenheit",
-  "input_value": 100.0
-}
-```
-
-**Error Response** `422 Unprocessable Entity`
-```json
-{
-  "detail": "Temperature is below absolute zero for the given scale."
-}
-```
-
----
-
-## 5. Conversion Logic Rules
+## File Structure
 
 ```
-To convert any value → first convert to Kelvin → then convert to target:
-
-Celsius    → Kelvin:     K = C + 273.15
-Fahrenheit → Kelvin:     K = (F + 459.67) × 5/9
-Kelvin     → Kelvin:     K = K
-
-Kelvin → Celsius:        C = K − 273.15
-Kelvin → Fahrenheit:     F = K × 9/5 − 459.67
-Kelvin → Kelvin:         K = K
-
-Absolute zero in Kelvin: K >= 0
-```
-
----
-
-## 6. File Structure
-
-```
-temperature-converter/
+banking-app/
 │
-├── backend/
-│   ├── main.py                  # FastAPI app entry point, registers router
-│   ├── routers/
-│   │   └── convert.py           # POST /convert endpoint
-│   ├── services/
-│   │   └── conversion.py        # Pure conversion logic & absolute zero validation
-│   ├── models/
-│   │   └── schemas.py           # Pydantic request/response models
-│   └── requirements.txt         # fastapi, uvicorn, pydantic
+├── backend/                                  # Spring Boot Project
+│   ├── pom.xml                               # Maven dependencies
+│   └── src/
+│       └── main/
+│           ├── java/
+│           │   └── com/
+│           │       └── bankingapp/
+│           │           ├── BankingAppApplication.java        # Entry point
+│           │           ├── controller/
+│           │           │   └── AccountController.java        # REST endpoints
+│           │           ├── service/
+│           │           │   └── AccountService.java           # Business logic
+│           │           ├── model/
+│           │           │   ├── Account.java                  # Balance state (in-memory)
+│           │           │   └── Transaction.java              # Transaction record model
+│           │           └── config/
+│           │               └── CorsConfig.java               # CORS config for Vue dev server
+│           └── resources/
+│               └── application.properties                    # Server port config (8080)
 │
-└── frontend/
-    ├── index.html
+└── frontend/                                 # Vue 3 Project
     ├── package.json
-    ├── vite.config.js
+    ├── vite.config.js                        # Vite config + proxy to backend
+    ├── index.html
     └── src/
-        ├── main.jsx             # React entry point
-        ├── App.jsx              # Root component, holds state
-        ├── api/
-        │   └── convertApi.js    # Axios call to POST /convert
+        ├── main.js                           # Vue app entry point
+        ├── App.vue                           # Root component
         ├── components/
-        │   ├── ConverterForm.jsx # Input field + two dropdowns + button
-        │   ├── ResultDisplay.jsx # Shows the formatted result or error
-        │   └── ScaleDropdown.jsx # Reusable dropdown for scale selection
-        └── styles/
-            ├── App.module.css
-            ├── ConverterForm.module.css
-            └── ResultDisplay.module.css
+        │   ├── BalanceDisplay.vue            # Shows current balance
+        │   ├── DepositForm.vue               # Deposit input + button
+        │   ├── WithdrawForm.vue              # Withdraw input + button
+        │   └── TransactionHistory.vue        # List of past transactions
+        ├── services/
+        │   └── api.js                        # Axios API calls to backend
+        └── assets/
+            └── styles/
+                └── main.css                  # Global styles
 ```
 
 ---
 
-## 7. Component Responsibilities
+## Key Implementation Notes
 
-### `App.jsx`
-- Owns state: `inputValue`, `fromScale`, `toScale`, `result`, `error`, `isLoading`
-- Passes handlers down to `ConverterForm`
-- Passes `result` and `error` to `ResultDisplay`
+### Backend (Spring Boot)
+- `Account.java` will be a **singleton-scoped Spring `@Service`** holding balance and transaction list in memory
+- `AccountService.java` handles deposit/withdraw logic with validation (no negative amounts, no overdraft)
+- `CorsConfig.java` allows requests from Vue dev server (`localhost:5173`)
+- Transactions stored as a `List<Transaction>` in memory — resets on server restart
 
-### `ConverterForm.jsx`
-- Renders the numeric input, two `ScaleDropdown` instances, and the Convert button
-- Performs client-side validation (empty, non-numeric) before calling the API
-- Calls `convertApi.js` on submit and lifts result/error up to `App`
+### Frontend (Vue 3)
+- `api.js` uses **Axios** to communicate with the Spring Boot REST API
+- `App.vue` manages shared state (balance, transactions) and passes data via props/emits
+- Forms validate input client-side before sending to backend
+- Balance refreshes automatically after every deposit or withdrawal
 
-### `ScaleDropdown.jsx`
-- Props: `label`, `value`, `onChange`
-- Renders a `<select>` with the three scale options
-
-### `ResultDisplay.jsx`
-- Props: `result`, `error`, `isLoading`
-- Conditionally renders a loading state, error message, or formatted result string
-
-### `convertApi.js`
-- Single exported async function `convertTemperature({ value, fromScale, toScale })`
-- Returns the parsed response data or throws a structured error
-
----
-
-## 8. Data Flow (End-to-End)
-
-```
-User fills form
-      │
-      ▼
-ConverterForm validates input (client-side)
-      │
-      ▼
-convertApi.js → POST /convert → FastAPI router (convert.py)
-                                        │
-                                        ▼
-                               schemas.py validates Pydantic model
-                                        │
-                                        ▼
-                               conversion.py runs math + absolute zero check
-                                        │
-                                        ▼
-                               JSON response returned
-      │
-      ▼
-App.jsx updates state → ResultDisplay renders output
-```
-
----
-
-## 9. Development Milestones
-
-| # | Milestone | Deliverable |
-|---|---|---|
-| 1 | Backend core | `conversion.py` with all 6 conversion paths + validation |
-| 2 | Backend API | Pydantic schemas + `/convert` endpoint wired up |
-| 3 | Frontend shell | Vite/React scaffold + `ConverterForm` renders correctly |
-| 4 | API integration | `convertApi.js` connected, result flows to `ResultDisplay` |
-| 5 | Error handling | Absolute zero errors + network errors displayed in UI |
-| 6 | Polish | Loading states, same-scale hint, CSS styling |
+### Validation Rules
+- Amount must be a **positive number greater than 0**
+- Withdrawal amount must **not exceed current balance**
+- Backend returns descriptive error messages for invalid operations

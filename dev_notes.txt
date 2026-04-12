@@ -66,3 +66,16 @@ Unresolved Bugs Remain    : False
 Passed First Try (Pass@1) : False
 Total Fix Iterations      : 3
 Unresolved Bugs Remain    : True
+
+===============
+Dynamtic Stack
+================
+
+3. Prompt: A banking app with the option to deposit cash and withdraw cash stored in memory on the backend. Use Vue as the frontend and use SpringBoot/Java as backend.
+
+--- RUN METRICS ---
+Passed First Try (Pass@1) : True
+Total Fix Iterations      : 0
+Unresolved Bugs Remain    : False
+
+CORS ISSUE

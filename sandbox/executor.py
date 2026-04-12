@@ -6,49 +6,52 @@ import time
 class SandboxExecutor:
     def __init__(self):
         self.client = docker.from_env()
-        self.image_name = "autoprototype-secure-app"
+        self.image_name = "autoprototype-dynamic-app"
         self.project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self.output_dir = os.path.join(self.project_root, "output_prototype")
-        self.dockerfile_path = os.path.join(self.project_root, "sandbox", "Dockerfile")
 
+    def _write_infra_files(self, state):
+        """Helper to write the dynamically generated Dockerfile and startup script."""
+        os.makedirs(self.output_dir, exist_ok=True)
+        
+        if state.get("dockerfile_content"):
+            with open(os.path.join(self.output_dir, "Dockerfile"), "w") as f:
+                f.write(state["dockerfile_content"])
+                
+        if state.get("startup_script_content"):
+            script_path = os.path.join(self.output_dir, "startup.sh")
+            with open(script_path, "w") as f:
+                f.write(state["startup_script_content"])
+
+    # --- FOR RUN_LIVE.PY ---
     def build_prototype_image(self):
-        """Builds the Docker image using the generated prototype files."""
-        print(f"Building secure image '{self.image_name}'...")
+        """Builds the Docker image using the AI-generated prototype files."""
+        print(f"Building dynamic image '{self.image_name}'...")
         
         self.client.images.build(
             path=self.output_dir,
-            dockerfile=self.dockerfile_path,
             tag=self.image_name,
             rm=True 
         )
-        print("Image built successfully with pre-baked dependencies.")
+        print("Image built successfully with AI-generated Dockerfile.")
 
     def run_prototype(self):
         """Spins up the container securely without host volume mounts."""
-        print(f"Starting prototype securely in '{self.image_name}'...")
-        
-        # Dependencies are already installed, so we just start the servers
-        startup_command = (
-            "bash -c '"
-            "cd /app/backend && uvicorn app.main:app --host 0.0.0.0 --port 8000 & "
-            "cd /app/frontend && npm start"
-            "'"
-        )
+        print(f"Starting prototype dynamically in '{self.image_name}'...")
 
         try:
             container = self.client.containers.run(
                 image=self.image_name,
-                command=startup_command,
+                command="bash startup.sh",
                 detach=True,
-                cap_drop=["ALL"], # SECURITY: Drops root capabilities to prevent container escape
-                ports={'8000/tcp': 8000, '3000/tcp': 3000},
+                cap_drop=["ALL"], # SECURITY: Drops root capabilities
+                publish_all_ports=True, # Maps any EXPOSE ports in the Dockerfile to random localhost ports
                 name="autoprototype-live"
             )
             
             print("\n--- Servers are Live! ---")
-            print("Backend API: http://localhost:8000/docs")
-            print("Frontend UI: http://localhost:3000")
             print(f"Container ID: {container.id[:10]}")
+            print("Run 'docker port autoprototype-live' in your terminal to see the mapped localhost ports.")
             print("To stop: docker rm -f autoprototype-live")
             
             return container
@@ -56,33 +59,29 @@ class SandboxExecutor:
         except docker.errors.APIError as e:
             print(f"Failed to start container: {e}")
 
-    def test_prototype_and_get_logs(self) -> str:
+    # --- FOR LANGGRAPH WORKFLOW ---
+    def test_prototype_and_get_logs(self, state) -> str:
         """Builds, runs briefly to catch startup errors, grabs logs, and cleans up."""
+        self._write_infra_files(state)
+        
         try:
-            print("-> Executor: Building image for mid-flight testing...")
+            print("-> Executor: Building dynamic image for mid-flight testing...")
             self.client.images.build(
                 path=self.output_dir,
-                dockerfile=self.dockerfile_path,
                 tag=self.image_name,
                 rm=True 
             )
             
             print("-> Executor: Spinning up container for 10 seconds to catch errors...")
-            startup_command = (
-                "bash -c '"
-                "cd /app/backend && uvicorn app.main:app --host 0.0.0.0 --port 8000 & "
-                "cd /app/frontend && npm start"
-                "'"
-            )
             
             container = self.client.containers.run(
                 image=self.image_name,
-                command=startup_command,
+                command="bash startup.sh",
                 detach=True,
                 cap_drop=["ALL"]
             )
             
-            # Wait for servers to attempt startup (npm start usually takes a few seconds to crash if broken)
+            # Wait for servers to attempt startup
             time.sleep(10)
 
             # Grab the combined logs
@@ -96,7 +95,7 @@ class SandboxExecutor:
             return logs
 
         except docker.errors.BuildError as e:
-            # If the Dockerfile itself fails (e.g., bad requirements.txt), catch it
+            # Catch Dockerfile syntax/build errors
             build_logs = "".join([log.get('stream', '') for log in e.build_log])
             return f"DOCKER BUILD FAILED:\n{build_logs}"
         except Exception as e:

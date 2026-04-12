@@ -9,7 +9,7 @@ def run_autoprototype():
     
     # Define the starting state with a test idea
     initial_state = {
-        "user_idea": """Build a temperature converter. The user enters a value and selects the input and output scales (Celsius, Fahrenheit, Kelvin) from dropdowns. The backend calculates the conversion and returns the exact number.""",
+        "user_idea": """A banking app with the option to deposit cash and withdraw cash stored in memory on the backend. Use Vue as the frontend and use SpringBoot/Java as backend.""",
         "error_messages": [],
         "iteration_count": 0
     }
