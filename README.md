@@ -55,6 +55,7 @@ Because autonomous code generation can be unpredictable, we execute the AI's cod
 
 ### 4. The Workflow Graph (`core/graph.py`)
 The flow is orchestrated as a directed relay with a conditional self-correction loop:
+
 **Idea** → **PM** → **Backend Dev** → **Frontend Dev** → **DevOps** → **Executor** → **Debugger** → **Success**.
 (If Debugger finds bugs, route back to Backend/Frontend. If max iterations hit or 0 bugs found, route to Success).
 ---
