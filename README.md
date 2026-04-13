@@ -2,7 +2,7 @@
 
 **Project Goal:** To build a fully autonomous, multi-agent workflow that transforms a natural language idea into a functional, multi-file software prototype. AutoPrototype dynamically selects tech stacks (e.g., React, FastAPI, Spring Boot) and writes, tests, and self-corrects its own code.
 
-## Current Project Status: Multi-Agent Refactor & Dynamic Sandbox
+## Current Project Status: Frontend UI and Database Agent
 The system has been heavily refactored for maintainability and scalability. Agents are now strictly separated by role, utility functions are isolated, and the Docker Sandbox features advanced dual-log parsing to catch both code compilation errors and infrastructure/engine failures.
 
 ## Technical Architecture: How it Works
@@ -55,7 +55,7 @@ Because autonomous code generation can be unpredictable, we execute the AI's cod
 
 ### 4. The Workflow Graph (`core/graph.py`)
 The flow is orchestrated as a directed relay with a conditional self-correction loop:
-Idea → PM → Backend → Frontend → DevOps → Executor → Debugger
+**Idea** → **PM** → **Backend Dev** → **Frontend Dev** → **DevOps** → **Executor** → **Debugger** → **Success**.
 (If Debugger finds bugs, route back to Backend/Frontend. If max iterations hit or 0 bugs found, route to Success).
 ---
 
