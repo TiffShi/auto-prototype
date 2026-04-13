@@ -67,7 +67,7 @@ Passed First Try (Pass@1) : False
 Total Fix Iterations      : 3
 Unresolved Bugs Remain    : True
 
-===============
+================
 Dynamtic Stack
 ================
 
@@ -79,3 +79,26 @@ Total Fix Iterations      : 0
 Unresolved Bugs Remain    : False
 
 CORS ISSUE
+
+4. Prompt: Build a simple CTF leaderboard. Users can submit a team name and a point value. The backend should store these submissions in memory. The frontend should display a live, dynamically sorted leaderboard ranking teams from highest to lowest score. Use the React framework for the frontend and Express for the backend.
+
+--- RUN METRICS ---
+Passed First Try (Pass@1) : True
+Total Fix Iterations      : 0
+Unresolved Bugs Remain    : False
+
+5. Prompt: A banking app with the option to deposit cash and withdraw cash stored in memory on the backend. Make sure there is jwt authentication and a signup/login page. Use Angular and Express
+
+--- RUN METRICS ---
+Passed First Try (Pass@1) : True
+Total Fix Iterations      : 0
+Unresolved Bugs Remain    : False
+
+6. Prompt: Build a prime number visualizer using the Sieve of Eratosthenes. The user inputs a maximum number (e.g., 100). The backend calculates all primes up to that limit. The frontend should display a grid of all numbers from 1 to the limit, highlighting the prime numbers in a distinct color. Use React and Springboot
+
+--- RUN METRICS ---
+Passed First Try (Pass@1) : False
+Total Fix Iterations      : 2
+Unresolved Bugs Remain    : False
+
+Intial prompting didn't work at all because executor.py (test_prototype_and_get_logs()) function was only reading stream logs from docker not error logs. Made it read Docker errors as well. 

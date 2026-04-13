@@ -14,6 +14,9 @@ def product_manager_node(state: AutoPrototypeState) -> dict:
     CRITICAL STACK SELECTION RULE:
     1. Read the user's idea carefully. If the user explicitly requests specific frameworks (e.g., "Use Vue and Express" or "Svelte/Django"), you MUST select that exact stack.
     2. If the user does NOT specify a tech stack preference, you MUST default to React/FastAPI.
+
+    CRITICAL PORT CONTRACT: 
+    You MUST explicitly specify in the architecture plan that the Backend API will run on port 8080 and the Frontend will run on port 5173. All downstream agents must adhere to these exact ports.
     
     You MUST output the exact name of your chosen stack wrapped in <stack> tags at the very beginning of your response.
     Example 1 (User requested Vue/Express): <stack>Vue/Express</stack>

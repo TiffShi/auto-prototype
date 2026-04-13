@@ -1,0 +1,40 @@
+<section class="search-section" aria-label="Weather search">
+  <form class="search-form" (ngSubmit)="onSubmit()" novalidate>
+    <div class="input-wrapper" [class.has-error]="validationError">
+      <span class="input-icon" aria-hidden="true">📍</span>
+      <input
+        class="search-input focus-ring"
+        type="text"
+        id="location-input"
+        name="location"
+        [(ngModel)]="locationInput"
+        (ngModelChange)="onInputChange()"
+        placeholder="Enter city name or ZIP code…"
+        autocomplete="off"
+        autocorrect="off"
+        spellcheck="false"
+        maxlength="100"
+        [disabled]="isLoading"
+        aria-label="Location search input"
+        aria-describedby="validation-msg"
+      />
+      <button
+        class="search-btn focus-ring"
+        type="submit"
+        [disabled]="isLoading"
+        aria-label="Search weather">
+        <span *ngIf="!isLoading" class="btn-icon">🔍</span>
+        <span *ngIf="isLoading" class="btn-spinner" aria-hidden="true"></span>
+        <span class="btn-label">{{ isLoading ? 'Searching…' : 'Search' }}</span>
+      </button>
+    </div>
+
+    <p
+      id="validation-msg"
+      class="validation-error"
+      *ngIf="validationError"
+      role="alert">
+      {{ validationError }}
+    </p>
+  </form>
+</section>

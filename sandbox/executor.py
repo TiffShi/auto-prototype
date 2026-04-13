@@ -45,13 +45,14 @@ class SandboxExecutor:
                 command="bash startup.sh",
                 detach=True,
                 cap_drop=["ALL"], # SECURITY: Drops root capabilities
-                publish_all_ports=True, # Maps any EXPOSE ports in the Dockerfile to random localhost ports
+                ports={'8080/tcp': 8080, '5173/tcp': 5173},
                 name="autoprototype-live"
             )
             
             print("\n--- Servers are Live! ---")
             print(f"Container ID: {container.id[:10]}")
-            print("Run 'docker port autoprototype-live' in your terminal to see the mapped localhost ports.")
+            print("Frontend running at: http://localhost:5173")
+            print("Backend running at:  http://localhost:8080")
             print("To stop: docker rm -f autoprototype-live")
             
             return container
@@ -95,8 +96,14 @@ class SandboxExecutor:
             return logs
 
         except docker.errors.BuildError as e:
-            # Catch Dockerfile syntax/build errors
+            # 1. Grab the explicit fatal error message provided by Docker
+            fatal_error = e.msg
+            
+            # 2. Grab the standard output, but truncate it to the last 2500 chars 
+            # to avoid flooding the AI with dependency download logs.
             build_logs = "".join([log.get('stream', '') for log in e.build_log])
-            return f"DOCKER BUILD FAILED:\n{build_logs}"
+            truncated_logs = build_logs[-2500:] if len(build_logs) > 2500 else build_logs
+            
+            return f"DOCKER BUILD FAILED:\nFatal Error: {fatal_error}\n\nLast Output:\n{truncated_logs}"
         except Exception as e:
             return f"EXECUTION FAILED:\n{str(e)}"

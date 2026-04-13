@@ -1,0 +1,63 @@
+<article class="weather-card" aria-label="Weather information for {{ weather.location }}">
+
+  <!-- ── Location Header ──────────────────────────────────── -->
+  <header class="card-header">
+    <div class="location-info">
+      <h2 class="location-name">{{ weather.location }}</h2>
+      <span class="location-country">{{ weather.country }}</span>
+    </div>
+    <div class="weather-icon-large" aria-hidden="true">{{ weatherIcon }}</div>
+  </header>
+
+  <!-- ── Description ──────────────────────────────────────── -->
+  <p class="weather-description">{{ weather.description }}</p>
+
+  <!-- ── Temperature Display ──────────────────────────────── -->
+  <div class="temperature-block">
+    <div class="temp-primary">
+      <span class="temp-value">{{ weather.temperatureCelsius }}</span>
+      <span class="temp-unit">°C</span>
+    </div>
+    <div class="temp-divider" aria-hidden="true">|</div>
+    <div class="temp-secondary">
+      <span class="temp-value">{{ weather.temperatureFahrenheit }}</span>
+      <span class="temp-unit">°F</span>
+    </div>
+  </div>
+
+  <!-- ── Detail Stats ──────────────────────────────────────── -->
+  <div class="stats-grid">
+    <div class="stat-item">
+      <span class="stat-icon" aria-hidden="true">💧</span>
+      <div class="stat-content">
+        <span class="stat-label">Humidity</span>
+        <span class="stat-value">{{ weather.humidity }}%</span>
+      </div>
+    </div>
+
+    <div class="stat-item">
+      <span class="stat-icon" aria-hidden="true">💨</span>
+      <div class="stat-content">
+        <span class="stat-label">Wind Speed</span>
+        <span class="stat-value">{{ weather.windSpeed }} m/s</span>
+      </div>
+    </div>
+
+    <div class="stat-item">
+      <span class="stat-icon" aria-hidden="true">🌡️</span>
+      <div class="stat-content">
+        <span class="stat-label">Feels Like</span>
+        <span class="stat-value">{{ weather.temperatureCelsius }}°C</span>
+      </div>
+    </div>
+
+    <div class="stat-item">
+      <span class="stat-icon" aria-hidden="true">🌍</span>
+      <div class="stat-content">
+        <span class="stat-label">Country</span>
+        <span class="stat-value">{{ weather.country }}</span>
+      </div>
+    </div>
+  </div>
+
+</article>

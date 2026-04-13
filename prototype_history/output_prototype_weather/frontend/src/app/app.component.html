@@ -1,0 +1,52 @@
+<div class="app-shell">
+  <!-- ── Header ─────────────────────────────────────────── -->
+  <header class="app-header">
+    <div class="header-inner">
+      <span class="header-icon">🌤️</span>
+      <h1 class="header-title">WeatherNow</h1>
+    </div>
+  </header>
+
+  <!-- ── Main Content ───────────────────────────────────── -->
+  <main class="app-main">
+    <!-- Search Bar -->
+    <app-search-bar
+      [isLoading]="isLoading"
+      (search)="onSearch($event)">
+    </app-search-bar>
+
+    <!-- Loading Spinner -->
+    <div class="loading-container" *ngIf="isLoading" aria-live="polite" aria-label="Loading weather data">
+      <div class="spinner">
+        <div class="spinner-ring"></div>
+        <div class="spinner-ring"></div>
+        <div class="spinner-ring"></div>
+      </div>
+      <p class="loading-text">Fetching weather data…</p>
+    </div>
+
+    <!-- Error Banner -->
+    <div class="error-banner" *ngIf="errorMessage && !isLoading" role="alert">
+      <span class="error-icon">⚠️</span>
+      <p class="error-message">{{ errorMessage }}</p>
+    </div>
+
+    <!-- Weather Card -->
+    <app-weather-card
+      *ngIf="weatherData && !isLoading"
+      [weather]="weatherData">
+    </app-weather-card>
+
+    <!-- Empty State -->
+    <div class="empty-state" *ngIf="!weatherData && !isLoading && !errorMessage">
+      <div class="empty-icon">🔍</div>
+      <p class="empty-title">Search for a city</p>
+      <p class="empty-subtitle">Enter a city name or ZIP code above to get the current weather conditions.</p>
+    </div>
+  </main>
+
+  <!-- ── Footer ─────────────────────────────────────────── -->
+  <footer class="app-footer">
+    <p>Powered by <a href="https://openweathermap.org" target="_blank" rel="noopener noreferrer">OpenWeatherMap</a></p>
+  </footer>
+</div>

@@ -1,7 +1,11 @@
 from langgraph.graph import StateGraph, END
 from core.state import AutoPrototypeState
 from agents.pm_agent import product_manager_node
-from agents.dev_agents import backend_agent_node, frontend_agent_node, file_saver_node, debugger_node, execution_node, devops_agent_node
+from agents.backend_agent import backend_agent_node
+from agents.frontend_agent import frontend_agent_node
+from agents.devops_agent import devops_agent_node
+from agents.debugger_agent import debugger_node
+from agents.system_nodes import execution_node, file_saver_node
 
 # --- ROUTER FUNCTION ---
 def route_after_debugger(state: AutoPrototypeState):
