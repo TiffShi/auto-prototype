@@ -1,0 +1,16 @@
+{
+  "name": "banking-app-frontend",
+  "version": "1.0.0",
+  "description": "ClearBank — Simple Banking Frontend",
+  "scripts": {
+    "dev": "npx serve . --listen tcp://0.0.0.0:5173",
+    "start": "npx serve . --listen tcp://0.0.0.0:5173"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "serve": "^14.2.3"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}

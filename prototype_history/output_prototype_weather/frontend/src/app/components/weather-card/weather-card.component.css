@@ -1,0 +1,220 @@
+/* ============================================================
+   Weather Card Component
+   ============================================================ */
+
+.weather-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 2rem;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: var(--shadow-card);
+  animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Card Header ─────────────────────────────────────────── */
+.card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.location-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.location-name {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--color-text-primary);
+  line-height: 1.1;
+}
+
+.location-country {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  background: rgba(86, 204, 242, 0.12);
+  border: 1px solid rgba(86, 204, 242, 0.25);
+  border-radius: 4px;
+  padding: 0.15rem 0.5rem;
+  width: fit-content;
+}
+
+.weather-icon-large {
+  font-size: 3.5rem;
+  line-height: 1;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.3));
+}
+
+/* ── Description ─────────────────────────────────────────── */
+.weather-description {
+  font-size: 1rem;
+  color: var(--color-text-secondary);
+  font-weight: 400;
+  margin-bottom: 1.5rem;
+  text-transform: capitalize;
+}
+
+/* ── Temperature Block ───────────────────────────────────── */
+.temperature-block {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  margin-bottom: 2rem;
+  padding: 1.25rem 1.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+
+.temp-primary,
+.temp-secondary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.2rem;
+}
+
+.temp-primary .temp-value {
+  font-size: 3rem;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  color: var(--color-text-primary);
+  line-height: 1;
+}
+
+.temp-primary .temp-unit {
+  font-size: 1.5rem;
+  font-weight: 300;
+  color: var(--color-text-secondary);
+}
+
+.temp-divider {
+  color: var(--color-border);
+  font-size: 1.5rem;
+  font-weight: 200;
+  user-select: none;
+}
+
+.temp-secondary .temp-value {
+  font-size: 1.75rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  line-height: 1;
+}
+
+.temp-secondary .temp-unit {
+  font-size: 1rem;
+  font-weight: 300;
+  color: var(--color-text-muted);
+}
+
+/* ── Stats Grid ──────────────────────────────────────────── */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+}
+
+.stat-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  transition: background var(--transition-base), border-color var(--transition-base);
+}
+
+.stat-item:hover {
+  background: var(--color-surface-hover);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.stat-icon {
+  font-size: 1.25rem;
+  flex-shrink: 0;
+}
+
+.stat-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.stat-label {
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.stat-value {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Responsive ──────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .weather-card {
+    padding: 1.5rem 1.25rem;
+  }
+
+  .location-name {
+    font-size: 1.4rem;
+  }
+
+  .weather-icon-large {
+    font-size: 2.75rem;
+  }
+
+  .temp-primary .temp-value {
+    font-size: 2.5rem;
+  }
+
+  .temp-secondary .temp-value {
+    font-size: 1.5rem;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+  }
+
+  .stat-item {
+    padding: 0.75rem 0.75rem;
+  }
+}
+
+@media (max-width: 360px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+}

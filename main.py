@@ -9,9 +9,7 @@ def run_autoprototype():
     
     # Define the starting state with a test idea
     initial_state = {
-        "user_idea": """I want a simple app that tracks my daily water intake and sends me a reminder. 
-        There should be authentication so only logged in users can interface with the application.
-        There is no database so just use local mock data in a json file for login info""",
+        "user_idea": """Build a prime number visualizer using the Sieve of Eratosthenes. The user inputs a maximum number (e.g., 100). The backend calculates all primes up to that limit. The frontend should display a grid of all numbers from 1 to the limit, highlighting the prime numbers in a distinct color. Use React and Springboot""",
         "error_messages": [],
         "iteration_count": 0
     }
@@ -43,6 +41,19 @@ def run_autoprototype():
                 final_state.update(state_update)
     
     print("\nWorkflow Complete! Check 'debug_log.txt' for full inputs/outputs.")
+
+    final_iterations = final_state.get("iteration_count", 0)
+    unresolved_errors = final_state.get("error_messages", [])
+
+    passed_first_try = (final_iterations == 0 and len(unresolved_errors) == 0)
+
+    has_unresolved_bugs = len(unresolved_errors) > 0
+
+    print("\n--- RUN METRICS ---")
+    print(f"Passed First Try (Pass@1) : {passed_first_try}")
+    print(f"Total Fix Iterations      : {final_iterations}")
+    print(f"Unresolved Bugs Remain    : {has_unresolved_bugs}")
+
     print("\n--- FINAL ARCHITECTURE PLAN ---")
     print(final_state.get("architecture_plan", "No plan generated.")[:500] + "\n...(truncated)")
 

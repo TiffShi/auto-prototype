@@ -1,0 +1,141 @@
+# Calculator App — Architecture Plan
+
+---
+
+## 📋 Overview
+
+A clean, responsive calculator web application with a React frontend and a FastAPI backend that handles arithmetic operations via a REST API.
+
+---
+
+## ✅ Functional Requirements
+
+### Frontend
+- [ ] Display a calculator UI with buttons (0–9, operators, clear, equals)
+- [ ] Show current input and running expression in a display screen
+- [ ] Support operations: **addition, subtraction, multiplication, division**
+- [ ] Handle edge cases: division by zero, decimal inputs, chained operations
+- [ ] Send expression to backend API on `=` press and display result
+- [ ] Clear/reset button (`C`) to wipe the current state
+
+### Backend
+- [ ] `POST /calculate` — Accept a math expression, evaluate it, return the result
+- [ ] Validate and sanitize input (only allow safe numeric expressions)
+- [ ] Return structured JSON responses with result or error message
+- [ ] Handle division by zero and malformed expressions gracefully
+
+---
+
+## 🗂️ File Structure
+
+```
+calculator-app/
+├── backend/
+│   ├── main.py                  # FastAPI app entry point
+│   ├── routers/
+│   │   └── calculator.py        # /calculate route definition
+│   ├── services/
+│   │   └── calculator_service.py  # Expression parsing & evaluation logic
+│   ├── models/
+│   │   └── schemas.py           # Pydantic request/response models
+│   ├── requirements.txt         # fastapi, uvicorn, pydantic
+│   └── .env                     # Environment variables (PORT, etc.)
+│
+├── frontend/
+│   ├── public/
+│   │   └── index.html
+│   ├── src/
+│   │   ├── main.jsx             # React entry point
+│   │   ├── App.jsx              # Root component
+│   │   ├── components/
+│   │   │   ├── Calculator.jsx   # Main calculator shell component
+│   │   │   ├── Display.jsx      # Expression + result display screen
+│   │   │   └── Button.jsx       # Reusable calculator button component
+│   │   ├── hooks/
+│   │   │   └── useCalculator.js # State logic: input handling, API call
+│   │   ├── services/
+│   │   │   └── api.js           # Axios/fetch wrapper for backend calls
+│   │   └── styles/
+│   │       └── calculator.css   # Calculator layout and theme styles
+│   ├── package.json
+│   └── vite.config.js           # Vite bundler config
+│
+└── README.md
+```
+
+---
+
+## 🔌 API Contract
+
+### `POST /calculate`
+
+**Request Body:**
+```json
+{
+  "expression": "8 * (3 + 2)"
+}
+```
+
+**Success Response `200`:**
+```json
+{
+  "result": 40,
+  "expression": "8 * (3 + 2)"
+}
+```
+
+**Error Response `400`:**
+```json
+{
+  "error": "Division by zero is not allowed"
+}
+```
+
+---
+
+## 🧠 Key Implementation Notes
+
+### Backend — `calculator_service.py`
+- Use Python's `ast` module (NOT `eval()`) to safely parse and evaluate expressions
+- Whitelist only: numbers, `+`, `-`, `*`, `/`, `.`, `(`, `)`
+- Raise `HTTPException(400)` for invalid or unsafe input
+
+### Frontend — `useCalculator.js`
+- Track two pieces of state: `expression` (string) and `result` (string)
+- On `=`: call `api.js → POST /calculate` and update result display
+- On `C`: reset both states to empty
+
+### Frontend — `Button.jsx`
+```
+Props: { label, onClick, variant }
+Variants: "number" | "operator" | "action"
+```
+
+---
+
+## 🛠️ Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | React 18, Vite, CSS Modules |
+| Backend | FastAPI, Uvicorn, Pydantic v2 |
+| HTTP Client | Fetch API (native) |
+| Expression Eval | Python `ast` module |
+
+---
+
+## 🚀 Getting Started (Dev)
+
+```bash
+# Backend
+cd backend
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8000
+
+# Frontend
+cd frontend
+npm install
+npm run dev  # runs on http://localhost:5173
+```
+
+> **CORS:** Configure FastAPI `CORSMiddleware` to allow `http://localhost:5173` during development.

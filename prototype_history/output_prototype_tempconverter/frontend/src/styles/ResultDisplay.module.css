@@ -1,0 +1,160 @@
+.container {
+  border-radius: var(--radius-md);
+  padding: 20px;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  animation: fadeIn 0.3s ease both;
+  border: 1.5px solid transparent;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Success State */
+.successContainer {
+  background: var(--color-accent-light);
+  border-color: rgba(0, 212, 170, 0.3);
+}
+
+.successIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: var(--color-accent);
+  color: #0f1117;
+  border-radius: 50%;
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.resultContent {
+  flex: 1;
+  min-width: 0;
+}
+
+.resultLabel {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--color-accent);
+  margin-bottom: 12px;
+}
+
+.conversionFlow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.valueBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.valueNumber {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  line-height: 1.2;
+}
+
+.valueUnit {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.scaleLabel {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.flowArrow {
+  font-size: 20px;
+  color: var(--color-accent);
+  flex-shrink: 0;
+}
+
+.resultBlock {
+  background: rgba(0, 212, 170, 0.1);
+  border: 1px solid rgba(0, 212, 170, 0.25);
+  border-radius: var(--radius-sm);
+  padding: 8px 14px;
+}
+
+.resultNumber {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--color-accent);
+  line-height: 1.2;
+}
+
+.resultUnit {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-accent);
+}
+
+.fullResult {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  padding-top: 10px;
+  border-top: 1px solid rgba(0, 212, 170, 0.15);
+}
+
+.fullResult strong {
+  color: var(--color-accent);
+  font-weight: 700;
+}
+
+/* Error State */
+.errorContainer {
+  background: var(--color-error-light);
+  border-color: rgba(255, 92, 92, 0.3);
+}
+
+.errorIcon {
+  font-size: 22px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.errorContent {
+  flex: 1;
+}
+
+.errorTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-error);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.errorMessage {
+  font-size: 14px;
+  color: #ff8a8a;
+  line-height: 1.5;
+  font-weight: 400;
+}

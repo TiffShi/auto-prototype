@@ -1,0 +1,584 @@
+/* =========================================================
+   CSS Custom Properties
+   ========================================================= */
+:root {
+  --bg-primary: #0a0e1a;
+  --bg-secondary: #0f1629;
+  --bg-panel: #111827;
+  --bg-panel-border: #1e2d4a;
+
+  --accent-primary: #00d4ff;
+  --accent-secondary: #7c3aed;
+  --accent-glow: rgba(0, 212, 255, 0.15);
+
+  --gold: #ffd700;
+  --gold-bg: rgba(255, 215, 0, 0.08);
+  --gold-border: rgba(255, 215, 0, 0.3);
+
+  --silver: #c0c0c0;
+  --silver-bg: rgba(192, 192, 192, 0.06);
+  --silver-border: rgba(192, 192, 192, 0.25);
+
+  --bronze: #cd7f32;
+  --bronze-bg: rgba(205, 127, 50, 0.07);
+  --bronze-border: rgba(205, 127, 50, 0.25);
+
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-muted: #475569;
+
+  --success: #10b981;
+  --success-bg: rgba(16, 185, 129, 0.1);
+  --error: #ef4444;
+  --error-bg: rgba(239, 68, 68, 0.1);
+
+  --font-mono: "Share Tech Mono", "Courier New", monospace;
+  --font-display: "Orbitron", sans-serif;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  --transition: 0.2s ease;
+}
+
+/* =========================================================
+   Reset & Base
+   ========================================================= */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.6;
+  min-height: 100vh;
+  background-image:
+    radial-gradient(ellipse at 20% 50%, rgba(124, 58, 237, 0.05) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 20%, rgba(0, 212, 255, 0.05) 0%, transparent 60%);
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* =========================================================
+   App Container
+   ========================================================= */
+.app-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+
+/* =========================================================
+   Header
+   ========================================================= */
+.app-header {
+  position: relative;
+  text-align: center;
+  padding: 3rem 1rem 2rem;
+  overflow: hidden;
+}
+
+.header-glow {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 600px;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--accent-primary),
+    var(--accent-secondary),
+    var(--accent-primary),
+    transparent
+  );
+  box-shadow: 0 0 40px 8px var(--accent-glow);
+}
+
+.app-title {
+  font-family: var(--font-display);
+  font-size: clamp(1.6rem, 5vw, 2.8rem);
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  color: var(--text-primary);
+  text-shadow:
+    0 0 20px rgba(0, 212, 255, 0.4),
+    0 0 40px rgba(0, 212, 255, 0.15);
+  margin-bottom: 0.5rem;
+}
+
+.title-bracket {
+  color: var(--accent-primary);
+  text-shadow: 0 0 15px var(--accent-primary);
+}
+
+.app-subtitle {
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+/* =========================================================
+   Main Content
+   ========================================================= */
+.app-main {
+  flex: 1;
+  padding: 1.5rem 0 2rem;
+}
+
+.content-grid {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 768px) {
+  .content-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* =========================================================
+   Panels
+   ========================================================= */
+.panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--bg-panel-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--bg-panel-border);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.panel-icon {
+  font-size: 1.1rem;
+}
+
+.panel-title {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--accent-primary);
+  text-transform: uppercase;
+  flex: 1;
+}
+
+.last-updated {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+}
+
+/* =========================================================
+   Submit Form
+   ========================================================= */
+.submit-form {
+  padding: 1.5rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.form-label {
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.form-input {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--bg-panel-border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  padding: 0.65rem 0.85rem;
+  outline: none;
+  transition:
+    border-color var(--transition),
+    box-shadow var(--transition);
+  width: 100%;
+}
+
+.form-input::placeholder {
+  color: var(--text-muted);
+}
+
+.form-input:focus {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.1);
+}
+
+.form-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Remove number input arrows */
+.form-input[type="number"]::-webkit-inner-spin-button,
+.form-input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+}
+.form-input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+.submit-btn {
+  background: linear-gradient(
+    135deg,
+    var(--accent-primary),
+    var(--accent-secondary)
+  );
+  border: none;
+  border-radius: var(--radius-sm);
+  color: #fff;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 0.75rem 1rem;
+  text-transform: uppercase;
+  transition:
+    opacity var(--transition),
+    transform var(--transition),
+    box-shadow var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.submit-btn:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0, 212, 255, 0.3);
+}
+
+.submit-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.submit-btn:disabled,
+.submit-btn.submitting {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Spinner */
+.spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Form Status */
+.form-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.85rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  animation: fadeIn 0.2s ease;
+}
+
+.form-status--success {
+  background: var(--success-bg);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: var(--success);
+}
+
+.form-status--error {
+  background: var(--error-bg);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: var(--error);
+}
+
+.status-icon {
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* =========================================================
+   Error Banner
+   ========================================================= */
+.error-banner {
+  margin: 0.75rem 1.25rem 0;
+  padding: 0.6rem 0.85rem;
+  background: var(--error-bg);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-sm);
+  color: var(--error);
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.error-icon {
+  font-size: 1rem;
+}
+
+/* =========================================================
+   Leaderboard States
+   ========================================================= */
+.leaderboard-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1.5rem;
+  color: var(--text-secondary);
+  gap: 1rem;
+  font-size: 0.85rem;
+}
+
+.empty-icon {
+  font-size: 2.5rem;
+  opacity: 0.5;
+}
+
+/* Loading dots */
+.loading-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.loading-dots span {
+  width: 8px;
+  height: 8px;
+  background: var(--accent-primary);
+  border-radius: 50%;
+  animation: bounce 1.2s ease-in-out infinite;
+  opacity: 0.7;
+}
+
+.loading-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.loading-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes bounce {
+  0%, 80%, 100% {
+    transform: scale(0.7);
+    opacity: 0.4;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* =========================================================
+   Leaderboard Table
+   ========================================================= */
+.table-wrapper {
+  overflow-x: auto;
+  padding: 0.75rem 0 0.5rem;
+}
+
+.leaderboard-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.leaderboard-table thead tr {
+  border-bottom: 1px solid var(--bg-panel-border);
+}
+
+.leaderboard-table th {
+  font-family: var(--font-display);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 0.5rem 1.25rem;
+  text-align: left;
+}
+
+.col-rank {
+  width: 90px;
+  text-align: center !important;
+}
+
+.col-team {
+  /* flexible */
+}
+
+.col-points {
+  width: 120px;
+  text-align: right !important;
+}
+
+/* Table rows */
+.leaderboard-row {
+  border-bottom: 1px solid rgba(30, 45, 74, 0.5);
+  transition: background var(--transition);
+}
+
+.leaderboard-row:last-child {
+  border-bottom: none;
+}
+
+.leaderboard-row:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.leaderboard-table td {
+  padding: 0.75rem 1.25rem;
+  font-size: 0.88rem;
+}
+
+/* Rank badge */
+.rank-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  min-width: 32px;
+}
+
+/* Team name */
+.team-name {
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+/* Points */
+.col-points {
+  text-align: right;
+}
+
+.points-value {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--accent-primary);
+  letter-spacing: 0.05em;
+}
+
+/* =========================================================
+   Rank Highlights
+   ========================================================= */
+.rank-gold {
+  background: var(--gold-bg);
+  border-left: 3px solid var(--gold) !important;
+}
+
+.rank-gold .team-name {
+  color: var(--gold);
+  text-shadow: 0 0 8px rgba(255, 215, 0, 0.3);
+}
+
+.rank-gold .points-value {
+  color: var(--gold);
+}
+
+.rank-silver {
+  background: var(--silver-bg);
+  border-left: 3px solid var(--silver) !important;
+}
+
+.rank-silver .team-name {
+  color: var(--silver);
+}
+
+.rank-silver .points-value {
+  color: var(--silver);
+}
+
+.rank-bronze {
+  background: var(--bronze-bg);
+  border-left: 3px solid var(--bronze) !important;
+}
+
+.rank-bronze .team-name {
+  color: var(--bronze);
+}
+
+.rank-bronze .points-value {
+  color: var(--bronze);
+}
+
+/* =========================================================
+   Footer
+   ========================================================= */
+.app-footer {
+  text-align: center;
+  padding: 1.25rem;
+  border-top: 1px solid var(--bg-panel-border);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
