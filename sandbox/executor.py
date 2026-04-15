@@ -8,7 +8,7 @@ class SandboxExecutor:
         self.client = docker.from_env()
         self.image_name = "autoprototype-dynamic-app"
         self.project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        self.output_dir = os.path.join(self.project_root, "output_prototype")
+        self.output_dir = os.path.join(self.project_root, "frontend/output_prototype")
 
     def _write_infra_files(self, state):
         """Helper to write the dynamically generated Dockerfile and startup script."""
@@ -79,7 +79,8 @@ class SandboxExecutor:
                 image=self.image_name,
                 command="bash startup.sh",
                 detach=True,
-                cap_drop=["ALL"]
+                cap_drop=["ALL"],
+                name="autoprototype-test-run"
             )
             
             # Wait for servers to attempt startup

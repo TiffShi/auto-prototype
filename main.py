@@ -9,7 +9,7 @@ def run_autoprototype():
     
     # Define the starting state with a test idea
     initial_state = {
-        "user_idea": """Build a prime number visualizer using the Sieve of Eratosthenes. The user inputs a maximum number (e.g., 100). The backend calculates all primes up to that limit. The frontend should display a grid of all numbers from 1 to the limit, highlighting the prime numbers in a distinct color. Use React and Springboot""",
+        "user_idea": """Build a calculator app""",
         "error_messages": [],
         "iteration_count": 0
     }
