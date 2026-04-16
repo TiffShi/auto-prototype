@@ -1,0 +1,162 @@
+# Resource object code (Python 3)
+# Created by: object code
+# Created by: The Resource Compiler for Qt version 6.11.0
+# WARNING! All changes made in this file will be lost!
+
+from PySide6 import QtCore
+
+qt_resource_data = b"\
+\x00\x00\x02r\
+<\
+svg xmlns=\x22http:\
+//www.w3.org/200\
+0/svg\x22 viewBox=\x22\
+0 0 16 16\x22 width\
+=\x2214\x22 height=\x2214\
+\x22><rect x=\x222\x22 y=\
+\x221\x22 width=\x229\x22 he\
+ight=\x2214\x22 rx=\x221.\
+5\x22 fill=\x22#1e2330\
+\x22 stroke=\x22#2e384\
+9\x22 stroke-width=\
+\x221\x22></rect><rect\
+ x=\x2211\x22 y=\x221\x22 wi\
+dth=\x223\x22 height=\x22\
+4\x22 rx=\x221\x22 fill=\x22\
+#2e3849\x22></rect>\
+<path d=\x22M11 1 L\
+14 4 L11 4 Z\x22 fi\
+ll=\x22#181c23\x22 str\
+oke=\x22#2e3849\x22 st\
+roke-width=\x220.5\x22\
+></path><line x1\
+=\x224\x22 y1=\x226\x22 x2=\x22\
+10\x22 y2=\x226\x22 strok\
+e=\x22#3b82f6\x22 stro\
+ke-width=\x221\x22 opa\
+city=\x220.6\x22></lin\
+e><line x1=\x224\x22 y\
+1=\x228.5\x22 x2=\x2210\x22 \
+y2=\x228.5\x22 stroke=\
+\x22#5a6a82\x22 stroke\
+-width=\x221\x22 opaci\
+ty=\x220.5\x22></line>\
+<line x1=\x224\x22 y1=\
+\x2211\x22 x2=\x228\x22 y2=\x22\
+11\x22 stroke=\x22#5a6\
+a82\x22 stroke-widt\
+h=\x221\x22 opacity=\x220\
+.4\x22></line></svg\
+>\
+\x00\x00\x00\xa0\
+<\
+svg xmlns=\x22http:\
+//www.w3.org/200\
+0/svg\x22 viewBox=\x22\
+0 0 16 16\x22 width\
+=\x2220\x22 height=\x2220\
+\x22><polygon point\
+s=\x225,3 11,8 5,13\
+\x22 fill=\x22#3b82f6\x22\
+ opacity=\x220.8\x22><\
+/polygon></svg>\
+\x00\x00\x00\xa0\
+<\
+svg xmlns=\x22http:\
+//www.w3.org/200\
+0/svg\x22 viewBox=\x22\
+0 0 16 16\x22 width\
+=\x2220\x22 height=\x2220\
+\x22><polygon point\
+s=\x223,5 13,5 8,11\
+\x22 fill=\x22#3b82f6\x22\
+ opacity=\x220.8\x22><\
+/polygon></svg>\
+\x00\x00\x02U\
+<\
+svg xmlns=\x22http:\
+//www.w3.org/200\
+0/svg\x22 viewBox=\x22\
+0 0 16 16\x22 width\
+=\x2232\x22 height=\x2232\
+\x22><defs><linearG\
+radient id=\x22fc5\x22\
+ x1=\x220\x22 y1=\x220\x22 x\
+2=\x220\x22 y2=\x221\x22><st\
+op offset=\x220%\x22 s\
+top-color=\x22#3b82\
+f6\x22></stop><stop\
+ offset=\x22100%\x22 s\
+top-color=\x22#1d4e\
+d8\x22></stop></lin\
+earGradient></de\
+fs><path d=\x22M2 6\
+ L2 5 C2 4.45 2.\
+45 4 3 4 L6.8 4 \
+L7.8 5 L2 5 Z\x22 f\
+ill=\x22#2563eb\x22></\
+path><rect x=\x222\x22\
+ y=\x225\x22 width=\x2212\
+\x22 height=\x228\x22 rx=\
+\x221.5\x22 fill=\x22url(\
+#fc5)\x22></rect><p\
+ath d=\x22M2 5 L7.8\
+ 5 L6.8 4 L3 4 C\
+2.45 4 2 4.45 2 \
+5 Z\x22 fill=\x22#60a5\
+fa\x22 opacity=\x220.5\
+\x22></path><rect x\
+=\x222\x22 y=\x225\x22 width\
+=\x2212\x22 height=\x221.\
+5\x22 rx=\x221\x22 fill=\x22\
+#60a5fa\x22 opacity\
+=\x220.2\x22></rect></\
+svg>\
+"
+
+qt_resource_name = b"\
+\x00\x06\
+\x06\x8a\x9c\xb3\
+\x00a\
+\x00s\x00s\x00e\x00t\x00s\
+\x00\x08\
+\x00(Wg\
+\x00f\
+\x00i\x00l\x00e\x00.\x00s\x00v\x00g\
+\x00\x0f\
+\x02\x9f\x08\x07\
+\x00r\
+\x00i\x00g\x00h\x00t\x00_\x00a\x00r\x00r\x00o\x00w\x00.\x00s\x00v\x00g\
+\x00\x0e\
+\x04\xa2\xf1'\
+\x00d\
+\x00o\x00w\x00n\x00_\x00a\x00r\x00r\x00o\x00w\x00.\x00s\x00v\x00g\
+\x00\x11\
+\x0c&,\xe7\
+\x00c\
+\x00l\x00o\x00s\x00e\x00d\x00_\x00f\x00o\x00l\x00d\x00e\x00r\x00.\x00s\x00v\x00g\
+\
+"
+
+qt_resource_struct = b"\
+\x00\x00\x00\x00\x00\x02\x00\x00\x00\x01\x00\x00\x00\x01\
+\x00\x00\x00\x00\x00\x00\x00\x00\
+\x00\x00\x00\x00\x00\x02\x00\x00\x00\x04\x00\x00\x00\x02\
+\x00\x00\x00\x00\x00\x00\x00\x00\
+\x00\x00\x00\x12\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\
+\x00\x00\x01\x9d\x92~\xef\x13\
+\x00\x00\x00(\x00\x00\x00\x00\x00\x01\x00\x00\x02v\
+\x00\x00\x01\x9d\x92x\xf9\x7f\
+\x00\x00\x00L\x00\x00\x00\x00\x00\x01\x00\x00\x03\x1a\
+\x00\x00\x01\x9d\x92y\xb4p\
+\x00\x00\x00n\x00\x00\x00\x00\x00\x01\x00\x00\x03\xbe\
+\x00\x00\x01\x9d\x92{a\xfc\
+"
+
+def qInitResources():
+    QtCore.qRegisterResourceData(0x03, qt_resource_struct, qt_resource_name, qt_resource_data)
+
+def qCleanupResources():
+    QtCore.qUnregisterResourceData(0x03, qt_resource_struct, qt_resource_name, qt_resource_data)
+
+qInitResources()

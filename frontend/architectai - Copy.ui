@@ -6,12 +6,12 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1244</width>
-    <height>822</height>
+    <width>1216</width>
+    <height>831</height>
    </rect>
   </property>
   <property name="windowTitle">
-   <string>ArchitectAI — Multi-Agent App Builder</string>
+   <string>AutoPrototype</string>
   </property>
   <property name="styleSheet">
    <string notr="true">
@@ -157,6 +157,7 @@ QTabWidget#logTabs::pane {
 }
 QTabWidget#logTabs &gt; QTabBar {
     background-color: #12151a;
+    qproperty-drawBase: 0;
 }
 QTabBar::tab {
     background-color: transparent;
@@ -348,6 +349,12 @@ QLabel#progressPct {
     </property>
     <item>
      <widget class="QFrame" name="promptFrame">
+      <property name="maximumSize">
+       <size>
+        <width>16777215</width>
+        <height>80</height>
+       </size>
+      </property>
       <property name="frameShape">
        <enum>QFrame::StyledPanel</enum>
       </property>
@@ -484,19 +491,6 @@ QLabel#progressPct {
          </widget>
         </item>
         <item>
-         <spacer>
-          <property name="orientation">
-           <enum>Qt::Vertical</enum>
-          </property>
-          <property name="sizeHint" stdset="0">
-           <size>
-            <width>0</width>
-            <height>10</height>
-           </size>
-          </property>
-         </spacer>
-        </item>
-        <item>
          <layout class="QVBoxLayout" name="progressLayout">
           <property name="spacing">
            <number>5</number>
@@ -625,6 +619,9 @@ QLabel#progressPct {
         </property>
         <item>
          <widget class="QTabWidget" name="logTabs">
+          <property name="currentIndex">
+           <number>0</number>
+          </property>
           <property name="documentMode">
            <bool>true</bool>
           </property>
@@ -726,120 +723,6 @@ QFrame#logHeaderFrame {
               </property>
               <property name="placeholderText">
                <string>Pipeline output will appear here...</string>
-              </property>
-             </widget>
-            </item>
-           </layout>
-          </widget>
-          <widget class="QWidget" name="tabBackend">
-           <attribute name="title">
-            <string>Backend Agent</string>
-           </attribute>
-           <layout class="QVBoxLayout" name="backendTabLayout">
-            <property name="spacing">
-             <number>0</number>
-            </property>
-            <property name="leftMargin">
-             <number>0</number>
-            </property>
-            <property name="topMargin">
-             <number>0</number>
-            </property>
-            <property name="rightMargin">
-             <number>0</number>
-            </property>
-            <property name="bottomMargin">
-             <number>0</number>
-            </property>
-            <item>
-             <widget class="QPlainTextEdit" name="backendLog">
-              <property name="styleSheet">
-               <string notr="true">
-QPlainTextEdit { background:#0d0f12; border:none; color:#a855f7;
-    font-family:&quot;JetBrains Mono&quot;,&quot;Courier New&quot;,monospace; font-size:11px; padding:8px; }
-               </string>
-              </property>
-              <property name="readOnly">
-               <bool>true</bool>
-              </property>
-              <property name="placeholderText">
-               <string>Backend agent output...</string>
-              </property>
-             </widget>
-            </item>
-           </layout>
-          </widget>
-          <widget class="QWidget" name="tabExec">
-           <attribute name="title">
-            <string>Exec Node</string>
-           </attribute>
-           <layout class="QVBoxLayout" name="execTabLayout">
-            <property name="spacing">
-             <number>0</number>
-            </property>
-            <property name="leftMargin">
-             <number>0</number>
-            </property>
-            <property name="topMargin">
-             <number>0</number>
-            </property>
-            <property name="rightMargin">
-             <number>0</number>
-            </property>
-            <property name="bottomMargin">
-             <number>0</number>
-            </property>
-            <item>
-             <widget class="QPlainTextEdit" name="execLog">
-              <property name="styleSheet">
-               <string notr="true">
-QPlainTextEdit { background:#0d0f12; border:none; color:#06b6d4;
-    font-family:&quot;JetBrains Mono&quot;,&quot;Courier New&quot;,monospace; font-size:11px; padding:8px; }
-               </string>
-              </property>
-              <property name="readOnly">
-               <bool>true</bool>
-              </property>
-              <property name="placeholderText">
-               <string>Exec node output...</string>
-              </property>
-             </widget>
-            </item>
-           </layout>
-          </widget>
-          <widget class="QWidget" name="tabDebugger">
-           <attribute name="title">
-            <string>Debugger</string>
-           </attribute>
-           <layout class="QVBoxLayout" name="debugTabLayout">
-            <property name="spacing">
-             <number>0</number>
-            </property>
-            <property name="leftMargin">
-             <number>0</number>
-            </property>
-            <property name="topMargin">
-             <number>0</number>
-            </property>
-            <property name="rightMargin">
-             <number>0</number>
-            </property>
-            <property name="bottomMargin">
-             <number>0</number>
-            </property>
-            <item>
-             <widget class="QPlainTextEdit" name="debugLog">
-              <property name="styleSheet">
-               <string notr="true">
-QPlainTextEdit { background:#0d0f12; border:none; color:#f97316;
-    font-family:&quot;JetBrains Mono&quot;,&quot;Courier New&quot;,monospace; font-size:11px; padding:8px; }
-               </string>
-              </property>
-              <property name="readOnly">
-               <bool>true</bool>
-              </property>
-              <property name="placeholderText">
-               <string>Debugger output...</string>
               </property>
              </widget>
             </item>
@@ -1146,7 +1029,7 @@ QFrame#dockerHeaderFrame {
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1244</width>
+     <width>1216</width>
      <height>23</height>
     </rect>
    </property>
@@ -1166,41 +1049,16 @@ QFrame#dockerHeaderFrame {
     <addaction name="actionClearOutput"/>
     <addaction name="actionSetOutputDir"/>
    </widget>
-   <widget class="QMenu" name="menuAgents">
-    <property name="title">
-     <string>Agents</string>
-    </property>
-    <addaction name="actionConfigureAgents"/>
-    <addaction name="actionResetPipeline"/>
-   </widget>
-   <widget class="QMenu" name="menuDocker">
-    <property name="title">
-     <string>Docker</string>
-    </property>
-    <addaction name="actionStartContainers"/>
-    <addaction name="actionStopContainers"/>
-    <addaction name="actionViewLogs"/>
-   </widget>
    <widget class="QMenu" name="menuSettings">
     <property name="title">
      <string>Settings</string>
     </property>
     <addaction name="actionPreferences"/>
    </widget>
-   <widget class="QMenu" name="menuHelp">
-    <property name="title">
-     <string>Help</string>
-    </property>
-    <addaction name="actionAbout"/>
-   </widget>
    <addaction name="menuFile"/>
    <addaction name="menuProject"/>
-   <addaction name="menuAgents"/>
-   <addaction name="menuDocker"/>
    <addaction name="menuSettings"/>
-   <addaction name="menuHelp"/>
   </widget>
-  <widget class="QStatusBar" name="statusBar"/>
   <action name="actionNewProject">
    <property name="text">
     <string>New Project</string>

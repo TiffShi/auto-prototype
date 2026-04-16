@@ -19,7 +19,7 @@ def apply_patches(original_code: str, patch_text: str) -> str:
             print("\n[PATCH FAILED] Could not locate exact search block in original code. The LLM might have hallucinated the indentation.")
             print(f"Wanted to find:\n{search_block[:100]}...\n")
             
-    print(f"-> Applied {patch_count} patches successfully.")
+    print(f"Applied {patch_count} patches successfully.")
     return patched_code
 
 # --- NEW UTILITY: Extracted from your old file_saver_node ---

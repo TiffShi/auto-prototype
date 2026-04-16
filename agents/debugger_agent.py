@@ -4,7 +4,7 @@ from langchain_core.prompts import ChatPromptTemplate
 
 # --- DEBUGGER AGENT ---
 def debugger_node(state: AutoPrototypeState) -> dict:
-    print("--- Debugger Agent Active (Analyzing Logs)---")
+    print("Debugger Agent Active (Analyzing Logs)")
     llm = ChatAnthropic(model="claude-sonnet-4-6", temperature=0.1)    
 
     system_prompt = """You are a QA Reviewer and Tech Lead. 

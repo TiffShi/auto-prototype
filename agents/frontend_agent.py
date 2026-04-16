@@ -6,7 +6,7 @@ from core.utils import apply_patches
 # --- FRONTEND AGENT ---
 def frontend_agent_node(state: AutoPrototypeState) -> dict:
     iteration = state.get('iteration_count', 0)
-    print(f"--- Frontend Agent Active (Iteration {iteration}) ---")
+    print(f"Frontend Agent Active (Iteration {iteration})")
     llm = ChatAnthropic(model="claude-sonnet-4-6", temperature=0.1)    
 
     is_fix_mode = iteration > 0
@@ -78,4 +78,5 @@ def frontend_agent_node(state: AutoPrototypeState) -> dict:
             "plan": state.get('architecture_plan', ''),
             "backend_code": state.get("backend_code", "No backend code available.")
         })
+        print(f"Frontend Agent Finished (Iteration {iteration})")
         return {"frontend_code": response.content}

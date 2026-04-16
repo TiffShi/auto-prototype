@@ -4,7 +4,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
 
 def devops_agent_node(state: AutoPrototypeState) -> dict:
-    print("--- DevOps Agent Active ---")
+    print("DevOps Agent Active")
     
     llm = ChatAnthropic(model="claude-sonnet-4-6", temperature=0.1)
     
@@ -52,6 +52,8 @@ def devops_agent_node(state: AutoPrototypeState) -> dict:
     # Parse the outputs using Regex
     dockerfile_match = re.search(r"###\s*Dockerfile\s*```\w*\n(.*?)```", content, re.DOTALL)
     startup_match = re.search(r"###\s*startup\.sh\s*```\w*\n(.*?)```", content, re.DOTALL)
+
+    print("DevOps Agent Finished")
     
     return {
         "dockerfile_content": dockerfile_match.group(1).strip() if dockerfile_match else None,

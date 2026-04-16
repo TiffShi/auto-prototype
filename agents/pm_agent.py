@@ -4,7 +4,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
 
 def product_manager_node(state: AutoPrototypeState) -> dict:
-    print("--- Product Manager Agent Active ---")
+    print("Product Manager Agent Active")
     
     llm = ChatAnthropic(model="claude-sonnet-4-6", temperature=0.2)
     
@@ -43,8 +43,8 @@ def product_manager_node(state: AutoPrototypeState) -> dict:
     # Clean the architecture plan by removing the <stack> tags so the devs just see the plan
     clean_plan = re.sub(r"<stack>.*?</stack>", "", content, flags=re.IGNORECASE).strip()
     
-    print(f"-> Selected Stack: {selected_stack_name}")
-    print("-> Architecture plan generated.")
+    print(f"    Selected Stack: {selected_stack_name}\n")
+    print("    Architecture plan generated.")
     
     return {
         "architecture_plan": clean_plan,

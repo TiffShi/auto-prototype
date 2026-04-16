@@ -14,16 +14,16 @@ def route_after_debugger(state: AutoPrototypeState):
     
     # 1. If QA passed it (error list was cleared)
     if not state.get("error_messages"):
-        print("-> Router: QA Passed. Proceeding to save.")
+        print("Router: QA Passed. Proceeding to save.")
         return "saver"
         
     # 2. If QA failed, but we hit the retry limit
     if state.get("iteration_count", 0) >= MAX_ITERATIONS:
-        print(f"-> Router: Max iterations ({MAX_ITERATIONS}) reached. Forcing save with known bugs.")
+        print(f"Router: Max iterations ({MAX_ITERATIONS}) reached. Forcing save with known bugs.")
         return "saver"
         
     # 3. If QA failed and we still have retries left
-    print("-> Router: Bugs found. Sending feedback back to Backend Developer.")
+    print("Router: Bugs found. Sending feedback back to Backend Developer.")
     return "backend"
 
 def create_graph():

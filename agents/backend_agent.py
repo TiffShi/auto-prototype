@@ -6,7 +6,7 @@ from core.utils import apply_patches
 # --- BACKEND AGENT ---
 def backend_agent_node(state: AutoPrototypeState) -> dict:
     iteration = state.get('iteration_count', 0)
-    print(f"--- Backend Agent Active (Iteration {iteration}) ---")
+    print(f"Backend Agent Active (Iteration {iteration})")
     llm = ChatAnthropic(model="claude-sonnet-4-6", temperature=0.1)    
 
     is_fix_mode = iteration > 0
@@ -72,4 +72,6 @@ def backend_agent_node(state: AutoPrototypeState) -> dict:
         response = (prompt | llm).invoke({
             "plan": state.get('architecture_plan', '')
         })
+
+        print(f"Backend Agent Finished (Iteration {iteration})")
         return {"backend_code": response.content}
