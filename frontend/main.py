@@ -43,12 +43,13 @@ def get_resource_path(relative_path):
     
 # --- CONSOLIDATED AGENTS & METADATA ---
 AGENTS = {
-    "pm":       {"index": 0,    "log_name": "[PM]","name": "Program Manager", "role": "ORCHESTRATOR",   "color": "#3b82f6", "icon_file": "pm_icon.svg", "progress": 15},
-    "backend":  {"index": 1,    "log_name": "[BACKEND]","name": "Backend", "role": "API / SERVICES", "color": "#a855f7", "icon_file": "backend_icon.svg", "progress": 30},
-    "frontend": {"index": 2,    "log_name": "[FRONTEND]","name": "Frontend", "role": "UI / UX AGENT",  "color": "#22c55e", "icon_file": "frontend_icon.svg", "progress": 45},
-    "devops":   {"index": 3,    "log_name": "[DEVOPS]","name": "DevOps", "role": "INFRA / DOCKER", "color": "#0ea5e9", "icon_file": "devops_icon.svg", "progress": 60},
-    "executor": {"index": 4,    "log_name": "[EXEC]","name": "Exec Node", "role": "EXECUTION NODE", "color": "#f97316", "icon_file": "execution_icon.svg", "progress": 75},
-    "debugger": {"index": 5,    "log_name": "[DEBUG]","name": "Debugger", "role": "REVIEW / FIX",   "color": "#db5151", "icon_file": "debugger_icon.svg", "progress": 90},
+    "pm":       {"index": 0,    "log_name": "[PM]","name": "Program Manager", "role": "ORCHESTRATOR",   "color": "#3b82f6", "icon_file": "pm_icon.svg", "progress": 10},
+    "backend":  {"index": 1,    "log_name": "[BACKEND]","name": "Backend", "role": "API / SERVICES", "color": "#a855f7", "icon_file": "backend_icon.svg", "progress": 25},
+    "frontend": {"index": 2,    "log_name": "[FRONTEND]","name": "Frontend", "role": "UI / UX AGENT",  "color": "#22c55e", "icon_file": "frontend_icon.svg", "progress": 40},
+    "data":     {"index": 3,    "log_name": "[DATA]",    "name": "Data Layer",      "role": "DB & STORAGE",   "color": "#eab308", "icon_file": "data_icon.svg", "progress": 55}, # <-- NEW AGENT
+    "devops":   {"index": 4,    "log_name": "[DEVOPS]","name": "DevOps", "role": "INFRA / DOCKER", "color": "#0ea5e9", "icon_file": "devops_icon.svg", "progress": 70},
+    "executor": {"index": 5,    "log_name": "[EXEC]","name": "Exec Node", "role": "EXECUTION NODE", "color": "#f97316", "icon_file": "execution_icon.svg", "progress": 85},
+    "debugger": {"index": 6,    "log_name": "[DEBUG]","name": "Debugger", "role": "REVIEW / FIX",   "color": "#db5151", "icon_file": "debugger_icon.svg", "progress": 95},
     "saver":    {"index": None, "log_name": "[SAVER]","name": "Saver", "role": "FILE SAVER", "color": "#64748b", "icon_file": "💾", "progress": 100},
 }
 

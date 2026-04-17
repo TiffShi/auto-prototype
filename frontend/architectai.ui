@@ -567,6 +567,14 @@ QPushButton#stopButton:disabled {
           </item>
           <item>
            <property name="text">
+            <string>  Backend</string>
+           </property>
+           <property name="toolTip">
+            <string>API / Services Agent — generates server code and DB models</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
             <string>  Frontend</string>
            </property>
            <property name="toolTip">
@@ -575,10 +583,7 @@ QPushButton#stopButton:disabled {
           </item>
           <item>
            <property name="text">
-            <string>  Backend</string>
-           </property>
-           <property name="toolTip">
-            <string>API / Services Agent — generates server code and DB models</string>
+            <string>  Data</string>
            </property>
           </item>
           <item>

@@ -4,45 +4,48 @@ from core.state import AutoPrototypeState
 
 # --- DIFF UTILITY FUNCTION ---
 def apply_patches(original_code: str, patch_text: str) -> str:
-    """Finds SEARCH/REPLACE blocks in the LLM response and applies them to the original code."""
     pattern = r"<<<SEARCH\n(.*?)\n===REPLACE\n(.*?)\n>>>"
     matches = re.findall(pattern, patch_text, re.DOTALL)
-    
+
     patched_code = original_code
-    patch_count = 0
-    
+    patch_count  = 0
+
     for search_block, replace_block in matches:
         if search_block in patched_code:
             patched_code = patched_code.replace(search_block, replace_block)
             patch_count += 1
         else:
-            print("\n[PATCH FAILED] Could not locate exact search block in original code. The LLM might have hallucinated the indentation.")
-            print(f"Wanted to find:\n{search_block[:100]}...\n")
-            
+            print("\n[PATCH FAILED] Could not locate exact search block in original code.")
+
     print(f"Applied {patch_count} patches successfully.")
     return patched_code
 
-# --- NEW UTILITY: Extracted from your old file_saver_node ---
+# --- FILE WRITER UTILITY ---
 def write_files_to_disk(state: AutoPrototypeState):
-    """Parses code blocks and writes them to the output directory so Docker can build them."""
-
+    """Parses ### path/to/file.ext ``` code ``` blocks from each agent's output and writes
+    them to the dynamic output directory selected by the user."""
+    
+    # 1. Grab the dynamic path from the UI! Fallback to local folder if missing.
     base_dir = state.get("project_dir", os.path.join(os.getcwd(),"output_prototype"))
-    def parse_and_write(content, sub_folder):
-        pattern = r"###\s+`?([\w\./_-]+\.\w+)`?\s+```\w*\n(.*?)```"
-        blocks = re.findall(pattern, content, re.DOTALL)
-        for file_path, code in blocks:
-            clean_path = file_path.strip()
 
-            if clean_path.startswith(f"{sub_folder}/"):
-                clean_path = clean_path[len(sub_folder)+1:]
-                
-            full_path = os.path.join(base_dir, sub_folder, clean_path)
+    def parse_and_write(content: str):
+        pattern = r"###\s+`?([\w\./_-]+\.\w+)`?\s+```\w*\n(.*?)```"
+        blocks  = re.findall(pattern, content, re.DOTALL)
+        for file_path, code in blocks:
+            # 2. Trust the LLM's path entirely (e.g. "backend/main.py", "database/schema.sql")
+            clean_path = file_path.strip()
+            full_path = os.path.join(base_dir, clean_path)
             
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
             with open(full_path, "w") as f:
                 f.write(code.strip())
 
     if state.get("backend_code"):
-        parse_and_write(state["backend_code"], "backend")
+        parse_and_write(state["backend_code"])
+
     if state.get("frontend_code"):
-        parse_and_write(state["frontend_code"], "frontend")
+        parse_and_write(state["frontend_code"])
+
+    if state.get("data_code"):
+        # Correctly writes to both database/ and bucket/ inside the user's chosen project_dir
+        parse_and_write(state["data_code"])

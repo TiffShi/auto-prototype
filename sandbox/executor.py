@@ -8,30 +8,35 @@ class SandboxExecutor:
         self.client = docker.from_env()
         self.image_name = "autoprototype-dynamic-app"
         self.project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        self.output_dir = os.path.join(self.project_root, "frontend/output_prototype")
+
+    def _get_target_dir(self, state: dict) -> str:
+        """Dynamically retrieve the correct project directory from state."""
+        project_dir = state.get("project_dir", "frontend/output_prototype")
+        if os.path.isabs(project_dir):
+            return project_dir
+        return os.path.join(self.project_root, project_dir)
 
     def _write_infra_files(self, state):
         """Helper to write the dynamically generated Dockerfile and startup script."""
-        os.makedirs(self.output_dir, exist_ok=True)
+        target_dir = self._get_target_dir(state)
+        os.makedirs(target_dir, exist_ok=True)
         
         if state.get("dockerfile_content"):
-            # Enforce Unix line endings for Docker
-            with open(os.path.join(self.output_dir, "Dockerfile"), "w", newline='\n') as f:
+            with open(os.path.join(target_dir, "Dockerfile"), "w", newline='\n') as f:
                 f.write(state["dockerfile_content"])
                 
         if state.get("startup_script_content"):
-            script_path = os.path.join(self.output_dir, "startup.sh")
-            # Enforce Unix line endings for Bash scripts
+            script_path = os.path.join(target_dir, "startup.sh")
             with open(script_path, "w", newline='\n') as f:
                 f.write(state["startup_script_content"])
 
     # --- FOR RUN_LIVE.PY ---
-    def build_prototype_image(self):
+    def build_prototype_image(self, target_dir: str):
         """Builds the Docker image using the AI-generated prototype files."""
-        print(f"Building dynamic image '{self.image_name}'...")
+        print(f"Building dynamic image '{self.image_name}' from {target_dir}...")
         
         self.client.images.build(
-            path=self.output_dir,
+            path=target_dir,
             tag=self.image_name,
             rm=True 
         )
@@ -66,11 +71,12 @@ class SandboxExecutor:
     def test_prototype_and_get_logs(self, state) -> str:
         """Builds, runs briefly to catch startup errors, grabs logs, and cleans up."""
         self._write_infra_files(state)
+        target_dir = self._get_target_dir(state)
         
         try:
-            print(" -> Executor: Building dynamic image for mid-flight testing...")
+            print(f" -> Executor: Building dynamic image from {target_dir} for mid-flight testing...")
             self.client.images.build(
-                path=self.output_dir,
+                path=target_dir,
                 tag=self.image_name,
                 rm=True 
             )
@@ -99,14 +105,9 @@ class SandboxExecutor:
             return logs
 
         except docker.errors.BuildError as e:
-            # 1. Grab the explicit fatal error message provided by Docker
             fatal_error = e.msg
-            
-            # 2. Grab the standard output, but truncate it to the last 2500 chars 
-            # to avoid flooding the AI with dependency download logs.
             build_logs = "".join([log.get('stream', '') for log in e.build_log])
             truncated_logs = build_logs[-2500:] if len(build_logs) > 2500 else build_logs
-            
             return f"DOCKER BUILD FAILED:\nFatal Error: {fatal_error}\n\nLast Output:\n{truncated_logs}"
         except Exception as e:
             return f"EXECUTION FAILED:\n{str(e)}"

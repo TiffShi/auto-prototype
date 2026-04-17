@@ -51,7 +51,9 @@ def backend_agent_node(state: AutoPrototypeState) -> dict:
         
     else:
         stack_name = state.get("selected_stack_name", "Python/FastAPI")
-        system_prompt = f"""You are a Senior Backend Engineer. Output the full backend source code for the {stack_name} stack.
+        db_name = state.get("selected_db_name", "PostgreSQL")
+
+        system_prompt = f"""You are a Senior Backend Engineer. Output the full backend source code for the {stack_name} stack, utilizing a {db_name} database.
         Use this exact format for every file:
         ### backend/path/to/file.ext
         ```[language]

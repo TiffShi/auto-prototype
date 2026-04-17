@@ -5,44 +5,68 @@ from langchain_core.prompts import ChatPromptTemplate
 # --- DEBUGGER AGENT ---
 def debugger_node(state: AutoPrototypeState) -> dict:
     print("Debugger Agent Active (Analyzing Logs)")
-    llm = ChatAnthropic(model="claude-sonnet-4-6", temperature=0.1)    
+    llm = ChatAnthropic(model="claude-sonnet-4-6", temperature=0.1)
 
-    system_prompt = """You are a QA Reviewer and Tech Lead. 
-    Review the Architecture Plan, Backend Code, Frontend Code, and the RUNTIME LOGS from the Docker Sandbox.
+    system_prompt = """You are a QA Reviewer and Tech Lead.
+    Review the Architecture Plan, all generated code layers, and the RUNTIME LOGS from the Docker Sandbox.
 
-    CRITICAL CHECKLIST - You must verify the following:
-    1. Did the build fail? (Check logs for pip or npm install errors).
-    2. Did the backend crash? (Check logs for Python tracebacks, ImportErrors, or syntax errors).
-    3. Did the frontend crash? (Check logs for React compilation errors).
+    CRITICAL CHECKLIST — verify each of the following:
+    1. Did the Docker build fail? (pip/npm install errors, missing apt packages)
+    2. Did the database fail to initialize? (SQL errors, connection refused, missing tables)
+    3. Did the backend crash? (Python tracebacks, ImportErrors, syntax errors, DB connection errors)
+    4. Did the frontend crash? (React compilation errors, missing env vars)
+    5. Did MinIO fail to start or create buckets? (only relevant if bucket files are present)
 
-    If the logs show clear startup success and no crashes, output exactly: 'VERDICT: PASS'.
+    If the logs show clear startup success across all layers with no crashes, output exactly: 'VERDICT: PASS'.
 
-    If there is a crash or error in the logs, output 'VERDICT: FAIL' followed by explicit instructions on what file to fix and how to fix it based on the stack trace.
+    If there is any crash or error, output 'VERDICT: FAIL' followed by a root-cause analysis and
+    explicit fix instructions for the relevant agent(s).
 
-    CRITICAL FORMATTING: You must strictly categorize your feedback into two distinct sections:
-    
+    CRITICAL FORMATTING — always include all four sections below, even if a section has no issues
+    (write "None" in that case). This is required so each agent can find its own feedback:
+
     BACKEND ISSUES:
-    [List any Python/FastAPI bugs based on the logs here]
-    
+    [Python/FastAPI/Express bugs, import errors, runtime crashes]
+
     FRONTEND ISSUES:
-    [List any React/Javascript/package.json bugs based on the logs here]
+    [React/JS/package.json bugs, compilation errors, missing env vars]
+
+    DATABASE ISSUES:
+    [Schema errors, init_db.py failures, connection string mismatches, missing tables]
+
+    BUCKET ISSUES:
+    [MinIO startup failures, bucket creation errors, SDK config issues]
     """
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", system_prompt),
-        ("human", "Plan:\n{plan}\n\nBackend:\n{backend}\n\nFrontend:\n{frontend}\n\nRUNTIME LOGS:\n{logs}")
+        ("human", """Plan:
+{plan}
+
+Backend:
+{backend}
+
+Frontend:
+{frontend}
+
+Data Layer (database + bucket setup):
+{data}
+
+RUNTIME LOGS:
+{logs}""")
     ])
-    
+
     response = (prompt | llm).invoke({
-        "plan": state["architecture_plan"],
-        "backend": state.get("backend_code", ""),
+        "plan":     state["architecture_plan"],
+        "backend":  state.get("backend_code", ""),
         "frontend": state.get("frontend_code", ""),
-        "logs": state.get("execution_logs", "No logs available.")
+        "data":     state.get("data_code", "No data layer code generated."),
+        "logs":     state.get("execution_logs", "No logs available.")
     })
-    
+
     content = response.content
     print(f"Debugger Output: {content[:150]}...")
-    
+
     if "VERDICT: PASS" in content.upper():
         return {"error_messages": []}
     else:
