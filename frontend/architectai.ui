@@ -319,6 +319,37 @@ QPushButton#stopButton:hover {
     border-color: #ef4444;
 }
 
+/* --- LAUNCH BUTTON STATES (Matches RUN) --- */
+QPushButton#launchButton {
+    background-color: #3b82f6; color: #ffffff; border: none; border-radius: 6px;
+    font-family: &quot;Courier New&quot;, monospace; font-size: 12px; font-weight: bold; 
+    letter-spacing: 2px; padding: 9px 16px; margin-top: 2px;
+}
+QPushButton#launchButton:hover { background-color: #1d4ed8; }
+QPushButton#launchButton:pressed { background-color: #1e40af; }
+QPushButton#launchButton:disabled {
+    background-color: transparent; 
+    color: #5a6a82; 
+    border: 1px solid #252c3a;
+    border-radius: 6px;   /* Added back */
+    padding: 9px 16px;    /* Added back */
+}
+
+/* --- DESTROY BUTTON STATES (Matches STOP) --- */
+QPushButton#stopPrototypeButton {
+    background-color: #ef4444; color: #ffffff; border: none; border-radius: 6px;
+    font-family: &quot;Courier New&quot;, monospace; font-size: 11px; font-weight: bold; 
+    padding: 7px 14px; letter-spacing: 1px; margin-top: 2px;
+}
+QPushButton#stopPrototypeButton:hover { background-color: #dc2626; }
+QPushButton#stopPrototypeButton:pressed { background-color: #b91c1c; }
+QPushButton#stopPrototypeButton:disabled {
+    background-color: transparent; 
+    color: #5a6a82; 
+    border: 1px solid #252c3a;
+    border-radius: 6px;
+    padding: 7px 14px;
+}
 /* ── Live badge label ── */
 QLabel#liveBadge {
     background-color: #166534;
@@ -349,12 +380,6 @@ QLabel#progressPct {
 QTableCornerButton::section {
     background-color: #12151a;
     border: none;
-}
-
-QTextEdit#promptEdit:disabled {
-    background-color: #12151a;
-    color: #5a6a82;
-    border: 1px solid #1e2330;
 }
 
 QListWidget#agentList {
@@ -388,9 +413,12 @@ QPushButton#runButton {
 QPushButton#runButton:hover { background-color: #1d4ed8; }
 QPushButton#runButton:pressed { background-color: #1e40af; }
 QPushButton#runButton:disabled {
-    background-color: transparent; color: #5a6a82; border: 1px solid #252c3a;
+    background-color: transparent; 
+    color: #5a6a82; 
+    border: 1px solid #252c3a;
+    border-radius: 6px;
+    padding: 9px 16px;
 }
-
 /* --- STOP BUTTON STATES --- */
 QPushButton#stopButton {
     background-color: #ef4444; color: #ffffff; border: none; border-radius: 6px;
@@ -399,8 +427,13 @@ QPushButton#stopButton {
 QPushButton#stopButton:hover { background-color: #dc2626; }
 QPushButton#stopButton:pressed { background-color: #b91c1c; }
 QPushButton#stopButton:disabled {
-    background-color: transparent; color: #5a6a82; border: 1px solid #252c3a;
-}</string>
+    background-color: transparent; 
+    color: #5a6a82; 
+    border: 1px solid #252c3a;
+    border-radius: 6px;
+    padding: 7px 14px;
+}
+</string>
   </property>
   <widget class="QWidget" name="centralWidget">
    <layout class="QVBoxLayout" name="rootLayout">
@@ -463,6 +496,9 @@ QPushButton#stopButton:disabled {
         <widget class="QTextEdit" name="promptEdit">
          <property name="verticalScrollBarPolicy">
           <enum>Qt::ScrollBarAlwaysOff</enum>
+         </property>
+         <property name="acceptRichText">
+          <bool>false</bool>
          </property>
          <property name="placeholderText">
           <string>Describe the application you want to build...</string>
@@ -783,6 +819,32 @@ QFrame#logHeaderFrame {
                   </size>
                  </property>
                 </spacer>
+               </item>
+               <item>
+                <widget class="QPushButton" name="launchButton">
+                 <property name="enabled">
+                  <bool>true</bool>
+                 </property>
+                 <property name="cursor">
+                  <cursorShape>PointingHandCursor</cursorShape>
+                 </property>
+                 <property name="styleSheet">
+                  <string notr="true"/>
+                 </property>
+                 <property name="text">
+                  <string>▶ LAUNCH</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QPushButton" name="stopPrototypeButton">
+                 <property name="enabled">
+                  <bool>false</bool>
+                 </property>
+                 <property name="text">
+                  <string>■ DESTROY</string>
+                 </property>
+                </widget>
                </item>
               </layout>
              </widget>

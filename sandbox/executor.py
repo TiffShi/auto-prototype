@@ -15,12 +15,14 @@ class SandboxExecutor:
         os.makedirs(self.output_dir, exist_ok=True)
         
         if state.get("dockerfile_content"):
-            with open(os.path.join(self.output_dir, "Dockerfile"), "w") as f:
+            # Enforce Unix line endings for Docker
+            with open(os.path.join(self.output_dir, "Dockerfile"), "w", newline='\n') as f:
                 f.write(state["dockerfile_content"])
                 
         if state.get("startup_script_content"):
             script_path = os.path.join(self.output_dir, "startup.sh")
-            with open(script_path, "w") as f:
+            # Enforce Unix line endings for Bash scripts
+            with open(script_path, "w", newline='\n') as f:
                 f.write(state["startup_script_content"])
 
     # --- FOR RUN_LIVE.PY ---
@@ -66,14 +68,14 @@ class SandboxExecutor:
         self._write_infra_files(state)
         
         try:
-            print("-> Executor: Building dynamic image for mid-flight testing...")
+            print(" -> Executor: Building dynamic image for mid-flight testing...")
             self.client.images.build(
                 path=self.output_dir,
                 tag=self.image_name,
                 rm=True 
             )
             
-            print("-> Executor: Spinning up container for 10 seconds to catch errors...")
+            print(" -> Executor: Spinning up container for 10 seconds to catch errors...")
             
             container = self.client.containers.run(
                 image=self.image_name,
@@ -93,7 +95,7 @@ class SandboxExecutor:
             container.stop()
             container.remove()
             
-            print("-> Executor: Logs captured and container destroyed.")
+            print(" -> Executor: Logs captured and container destroyed.")
             return logs
 
         except docker.errors.BuildError as e:

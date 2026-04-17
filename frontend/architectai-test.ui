@@ -1,0 +1,1330 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1216</width>
+    <height>783</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>AutoPrototype</string>
+  </property>
+  <property name="styleSheet">
+   <string notr="true">
+/* ── Global ── */
+QMainWindow, QWidget#centralWidget {
+    background-color: #0d0f12;
+    color: #c8d4e8;
+    font-family: &quot;Courier New&quot;, monospace;
+    font-size: 11px;
+}
+
+/* --- Tree Widget Arrows --- */
+QTreeWidget#fileTree::branch:has-children:closed {
+    border-image: url(:/assets/right_arrow.svg);
+    image: none;
+}
+
+QTreeWidget#fileTree::branch:has-children:open {
+    border-image: url(:/assets/down_arrow.svg);
+    image: none;
+}
+
+QTreeWidget#fileTree::branch:!has-children {
+    border-image: none;
+    image: none;
+}
+
+/* ── Menu Bar ── */
+QMenuBar {
+    background-color: #12151a;
+    color: #5a6a82;
+    border-bottom: 1px solid #252c3a;
+    font-size: 11px;
+    padding: 2px 4px;
+}
+QMenuBar::item:selected {
+    background-color: #1e2330;
+    color: #c8d4e8;
+    border-radius: 4px;
+}
+QMenu {
+    background-color: #12151a;
+    border: 1px solid #252c3a;
+    color: #c8d4e8;
+}
+QMenu::item:selected {
+    background-color: #1e2330;
+}
+
+/* ── Status Bar ── */
+QStatusBar {
+    background-color: #1d4ed8;
+    color: rgba(255,255,255,0.8);
+    font-size: 10px;
+    min-height: 22px;
+}
+QStatusBar::item { border: none; }
+
+/* ── Splitter ── */
+QSplitter::handle {
+    background-color: #252c3a;
+    width: 1px;
+    height: 1px;
+}
+
+/* ── Scroll Bars ── */
+QScrollBar:vertical {
+    background: transparent;
+    width: 5px;
+    margin: 0;
+}
+QScrollBar::handle:vertical {
+    background: #2e3849;
+    border-radius: 2px;
+    min-height: 20px;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+QScrollBar:horizontal {
+    background: transparent;
+    height: 5px;
+}
+QScrollBar::handle:horizontal {
+    background: #2e3849;
+    border-radius: 2px;
+}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
+
+/* ── Generic Panels ── */
+QFrame#sidebarFrame {
+    background-color: #12151a;
+    border-right: 1px solid #252c3a;
+}
+QFrame#promptFrame {
+    background-color: #12151a;
+    border-bottom: 1px solid #252c3a;
+}
+QFrame#rightPanelFrame {
+    background-color: #0d0f12;
+    border-left: 1px solid #252c3a;
+}
+QFrame#dockerFrame {
+    background-color: #12151a;
+    border-top: 1px solid #252c3a;
+}
+
+/* ── Section Labels ── */
+QLabel#sectionLabel {
+    background-color: #12151a;
+    color: #5a6a82;
+    font-size: 10px;
+    font-weight: bold;
+    letter-spacing: 2px;
+    padding: 6px 14px;
+    border-bottom: 1px solid #252c3a;
+}
+QLabel#panelLabel, QLabel#dockerpanelLabel {
+    color: #5a6a82;
+    font-size: 10px;
+    font-weight: bold;
+    letter-spacing: 2px;
+}
+QLabel#promptLabel {
+    color: #3b82f6;
+    font-size: 10px;
+    font-weight: bold;
+    letter-spacing: 2px;
+}
+
+/* ── Prompt TextEdit ── */
+QTextEdit#promptEdit {
+    background-color: #181c23;
+    border: 1px solid #2e3849;
+    border-radius: 6px;
+    color: #e8f0fc;
+    font-family: &quot;Courier New&quot;, monospace;
+    font-size: 12px;
+    padding: 6px 10px;
+    selection-background-color: #1e3a5f;
+}
+QTextEdit#promptEdit:focus {
+    border: 1px solid #3b82f6;
+}
+
+/* ── Log Output ── */
+QPlainTextEdit#logOutput, QPlainTextEdit#dockerlogOutput {
+    background-color: #0d0f12;
+    border: none;
+    color: #c8d4e8;
+    font-family: &quot;Courier New&quot;, monospace;
+    font-size: 11px;
+    padding: 8px;
+    selection-background-color: #1e3a5f;
+}
+
+/* ── Tab Widget ── */
+QTabWidget#logTabs::pane {
+    border: none;
+    background-color: #0d0f12;
+}
+QTabWidget#logTabs &gt; QTabBar {
+    background-color: #12151a;
+    qproperty-drawBase: 0;
+}
+QTabBar::tab {
+    background-color: transparent;
+    color: #5a6a82;
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: 5px 5px 0 0;
+    padding: 5px 14px;
+    margin-right: 2px;
+    font-size: 11px;
+}
+QTabBar::tab:selected {
+    background-color: #0d0f12;
+    color: #e8f0fc;
+    border-color: #252c3a;
+}
+QTabBar::tab:hover:!selected {
+    background-color: #181c23;
+    color: #c8d4e8;
+}
+
+/* ── Agent List ── */
+QListWidget#agentList {
+    background-color: transparent;
+    border: none;
+    outline: none;
+    padding: 6px;
+}
+QListWidget#agentList::item {
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    color: #c8d4e8;
+    padding: 6px 8px;
+    margin-bottom: 2px;
+    min-height: 36px;
+}
+QListWidget#agentList::item:hover {
+    background-color: #181c23;
+}
+QListWidget#agentList::item:selected {
+    background-color: #1e2330;
+    border-color: #2e3849;
+    color: #e8f0fc;
+}
+
+/* ── File Tree ── */
+QTreeWidget#fileTree {
+    background-color: transparent;
+    border: none;
+    color: #c8d4e8;
+    font-size: 11px;
+    outline: none;
+}
+QTreeWidget#fileTree::item {
+    padding: 2px 4px;
+    border-radius: 4px;
+}
+QTreeWidget#fileTree::item:hover {
+    background-color: #181c23;
+}
+QTreeWidget#fileTree::item:selected {
+    background-color: #1e2330;
+    color: #e8f0fc;
+}
+QTreeWidget#fileTree::branch {
+    background-color: transparent;
+}
+
+/* ── Docker Table ── */
+QTableWidget#dockerTable {
+    background-color: transparent;
+    border: none;
+    color: #c8d4e8;
+    font-size: 11px;
+    gridline-color: transparent;
+    outline: none;
+}
+QTableWidget#dockerTable::item {
+    padding: 4px 8px;
+    border-radius: 4px;
+    border-bottom: 1px solid #1e2330;
+}
+QTableWidget#dockerTable::item:selected {
+    background-color: #1e2330;
+}
+QHeaderView::section {
+    background-color: #12151a;
+    color: #5a6a82;
+    border: none;
+    border-bottom: 1px solid #252c3a;
+    padding: 4px 8px;
+    font-size: 10px;
+    letter-spacing: 1px;
+}
+
+/* ── Progress Bar ── */
+QProgressBar#pipelineProgress {
+    background-color: #181c23;
+    border: 1px solid #252c3a;
+    border-radius: 3px;
+    height: 5px;
+    text-align: center;
+    color: transparent;
+}
+QProgressBar#pipelineProgress::chunk {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #3b82f6, stop:1 #06b6d4);
+    border-radius: 3px;
+}
+
+/* ── Run Button ── */
+QPushButton#runButton {
+    background-color: #3b82f6;
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    font-family: &quot;Courier New&quot;, monospace;
+    font-size: 12px;
+    font-weight: bold;
+    letter-spacing: 2px;
+    padding: 9px 16px;
+}
+QPushButton#runButton:hover {
+    background-color: #1d4ed8;
+}
+QPushButton#runButton:pressed {
+    background-color: #1e40af;
+}
+
+/* ── Stop Button ── */
+QPushButton#stopButton {
+    background-color: transparent;
+    color: #5a6a82;
+    border: 1px solid #252c3a;
+    border-radius: 6px;
+    font-size: 11px;
+    padding: 7px 14px;
+}
+QPushButton#stopButton:hover {
+    background-color: #1e2330;
+    color: #ef4444;
+    border-color: #ef4444;
+}
+
+/* ── Live badge label ── */
+QLabel#liveBadge, QLabel#dockerStatusBadge {
+    background-color: #166534;
+    color: #22c55e;
+    border-radius: 3px;
+    font-size: 9px;
+    padding: 1px 6px;
+    letter-spacing: 1px;
+}
+QLabel#autoscrollLabel {
+    color: #5a6a82;
+    font-size: 10px;
+}
+
+/* ── Progress label ── */
+QLabel#progressLabel {
+    color: #5a6a82;
+    font-size: 10px;
+    letter-spacing: 1px;
+}
+QLabel#progressPct {
+    color: #3b82f6;
+    font-size: 10px;
+    font-weight: bold;
+}
+
+/* ── Table Corner Button Fix ── */
+QTableCornerButton::section {
+    background-color: #12151a;
+    border: none;
+}
+
+QListWidget#agentList {
+    background-color: transparent;
+    border: none;
+    outline: none;
+    padding: 6px;
+}
+
+QListWidget#agentList::item {
+    background-color: transparent;
+    border: none;
+    padding: 0px;
+    margin-bottom: 2px;
+    min-height: 36px;
+}
+
+QListWidget#agentList::item:hover, 
+QListWidget#agentList::item:selected {
+    background-color: transparent;
+}
+  
+/* Add this to the MainWindow stylesheet in Qt Designer */
+
+/* --- RUN BUTTON STATES --- */
+QPushButton#runButton {
+    background-color: #3b82f6; color: #ffffff; border: none; border-radius: 6px;
+    font-family: &quot;Courier New&quot;, monospace; font-size: 12px; font-weight: bold; 
+    letter-spacing: 2px; padding: 9px 16px;
+}
+QPushButton#runButton:hover { background-color: #1d4ed8; }
+QPushButton#runButton:pressed { background-color: #1e40af; }
+QPushButton#runButton:disabled {
+    background-color: transparent; color: #5a6a82; border: 1px solid #252c3a;
+}
+
+/* --- STOP BUTTON STATES --- */
+QPushButton#stopButton {
+    background-color: #ef4444; color: #ffffff; border: none; border-radius: 6px;
+    font-size: 11px; font-weight: bold; padding: 7px 14px; letter-spacing: 1px;
+}
+QPushButton#stopButton:hover { background-color: #dc2626; }
+QPushButton#stopButton:pressed { background-color: #b91c1c; }
+QPushButton#stopButton:disabled {
+    background-color: transparent; color: #5a6a82; border: 1px solid #252c3a;
+}</string>
+  </property>
+  <widget class="QWidget" name="centralWidget">
+   <layout class="QVBoxLayout" name="verticalLayout">
+    <item>
+     <widget class="QFrame" name="promptFrame">
+      <property name="maximumSize">
+       <size>
+        <width>16777215</width>
+        <height>80</height>
+       </size>
+      </property>
+      <property name="frameShape">
+       <enum>QFrame::StyledPanel</enum>
+      </property>
+      <property name="fixedHeight" stdset="0">
+       <number>76</number>
+      </property>
+      <layout class="QHBoxLayout" name="promptLayout">
+       <property name="spacing">
+        <number>10</number>
+       </property>
+       <property name="leftMargin">
+        <number>14</number>
+       </property>
+       <property name="topMargin">
+        <number>10</number>
+       </property>
+       <property name="rightMargin">
+        <number>14</number>
+       </property>
+       <property name="bottomMargin">
+        <number>10</number>
+       </property>
+       <item>
+        <widget class="QLabel" name="promptLabel">
+         <property name="text">
+          <string>PROMPT</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignTop</set>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QTextEdit" name="promptEdit">
+         <property name="verticalScrollBarPolicy">
+          <enum>Qt::ScrollBarAlwaysOff</enum>
+         </property>
+         <property name="acceptRichText">
+          <bool>false</bool>
+         </property>
+         <property name="placeholderText">
+          <string>Describe the application you want to build...</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </item>
+    <item>
+     <widget class="QSplitter" name="mainSplitter">
+      <property name="orientation">
+       <enum>Qt::Horizontal</enum>
+      </property>
+      <property name="childrenCollapsible">
+       <bool>false</bool>
+      </property>
+      <widget class="QFrame" name="sidebarFrame">
+       <property name="maximumSize">
+        <size>
+         <width>250</width>
+         <height>16777215</height>
+        </size>
+       </property>
+       <layout class="QVBoxLayout" name="sidebarLayout">
+        <property name="spacing">
+         <number>0</number>
+        </property>
+        <property name="leftMargin">
+         <number>0</number>
+        </property>
+        <property name="topMargin">
+         <number>0</number>
+        </property>
+        <property name="rightMargin">
+         <number>0</number>
+        </property>
+        <property name="bottomMargin">
+         <number>0</number>
+        </property>
+        <item>
+         <widget class="QLabel" name="sectionLabel">
+          <property name="text">
+           <string>AGENT PIPELINE</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QListWidget" name="agentList">
+          <property name="verticalScrollBarPolicy">
+           <enum>Qt::ScrollBarAlwaysOff</enum>
+          </property>
+          <property name="horizontalScrollBarPolicy">
+           <enum>Qt::ScrollBarAlwaysOff</enum>
+          </property>
+          <property name="selectionMode">
+           <enum>QAbstractItemView::NoSelection</enum>
+          </property>
+          <item>
+           <property name="text">
+            <string>  Program Manager</string>
+           </property>
+           <property name="toolTip">
+            <string>Orchestrator — parses prompt and builds task graph</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>  Frontend</string>
+           </property>
+           <property name="toolTip">
+            <string>UI / UX Agent — generates React/Vue/HTML components</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>  Backend</string>
+           </property>
+           <property name="toolTip">
+            <string>API / Services Agent — generates server code and DB models</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>  Exec Node</string>
+           </property>
+           <property name="toolTip">
+            <string>Execution Node — coordinates file writes and pipeline state</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>  DevOps</string>
+           </property>
+           <property name="toolTip">
+            <string>Infra / Docker Agent — writes Dockerfiles and compose files</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>  Debugger</string>
+           </property>
+           <property name="toolTip">
+            <string>Review / Fix Agent — validates output and corrects errors</string>
+           </property>
+          </item>
+         </widget>
+        </item>
+        <item>
+         <layout class="QVBoxLayout" name="progressLayout">
+          <property name="spacing">
+           <number>5</number>
+          </property>
+          <property name="leftMargin">
+           <number>12</number>
+          </property>
+          <property name="topMargin">
+           <number>6</number>
+          </property>
+          <property name="rightMargin">
+           <number>12</number>
+          </property>
+          <property name="bottomMargin">
+           <number>4</number>
+          </property>
+          <item>
+           <layout class="QHBoxLayout" name="progressLabelRow">
+            <item>
+             <widget class="QLabel" name="progressLabel">
+              <property name="text">
+               <string>PIPELINE PROGRESS</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer>
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>5</width>
+                <height>0</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+            <item>
+             <widget class="QLabel" name="progressPct">
+              <property name="text">
+               <string>0%</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QProgressBar" name="pipelineProgress">
+            <property name="maximum">
+             <number>100</number>
+            </property>
+            <property name="value">
+             <number>0</number>
+            </property>
+            <property name="textVisible">
+             <bool>false</bool>
+            </property>
+            <property name="fixedHeight" stdset="0">
+             <number>5</number>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <layout class="QVBoxLayout" name="btnLayout">
+          <property name="spacing">
+           <number>6</number>
+          </property>
+          <property name="leftMargin">
+           <number>8</number>
+          </property>
+          <property name="topMargin">
+           <number>6</number>
+          </property>
+          <property name="rightMargin">
+           <number>8</number>
+          </property>
+          <property name="bottomMargin">
+           <number>10</number>
+          </property>
+          <item>
+           <widget class="QPushButton" name="runButton">
+            <property name="cursor">
+             <cursorShape>PointingHandCursor</cursorShape>
+            </property>
+            <property name="text">
+             <string>▶   RUN PIPELINE</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="stopButton">
+            <property name="enabled">
+             <bool>false</bool>
+            </property>
+            <property name="cursor">
+             <cursorShape>PointingHandCursor</cursorShape>
+            </property>
+            <property name="text">
+             <string>■   STOP</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="centerPanel">
+       <layout class="QVBoxLayout" name="centerLayout">
+        <property name="spacing">
+         <number>0</number>
+        </property>
+        <property name="leftMargin">
+         <number>0</number>
+        </property>
+        <property name="topMargin">
+         <number>0</number>
+        </property>
+        <property name="rightMargin">
+         <number>0</number>
+        </property>
+        <property name="bottomMargin">
+         <number>0</number>
+        </property>
+        <item>
+         <widget class="QTabWidget" name="logTabs">
+          <property name="currentIndex">
+           <number>1</number>
+          </property>
+          <property name="documentMode">
+           <bool>true</bool>
+          </property>
+          <widget class="QWidget" name="tabAllLogs">
+           <attribute name="title">
+            <string>Agent Logs</string>
+           </attribute>
+           <layout class="QVBoxLayout" name="allLogsLayout">
+            <property name="spacing">
+             <number>0</number>
+            </property>
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <item>
+             <widget class="QFrame" name="logHeaderFrame">
+              <property name="styleSheet">
+               <string notr="true">
+QFrame#logHeaderFrame {
+    background-color: #12151a;
+    border-bottom: 1px solid #252c3a;
+    min-height: 30px;
+    max-height: 30px;
+}
+               </string>
+              </property>
+              <property name="frameShape">
+               <enum>QFrame::StyledPanel</enum>
+              </property>
+              <layout class="QHBoxLayout" name="logHeaderLayout">
+               <property name="spacing">
+                <number>8</number>
+               </property>
+               <property name="leftMargin">
+                <number>12</number>
+               </property>
+               <property name="topMargin">
+                <number>0</number>
+               </property>
+               <property name="rightMargin">
+                <number>12</number>
+               </property>
+               <property name="bottomMargin">
+                <number>0</number>
+               </property>
+               <item>
+                <widget class="QLabel" name="panelLabel">
+                 <property name="text">
+                  <string>LIVE OUTPUT</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QLabel" name="liveBadge">
+                 <property name="text">
+                  <string>● IDLE</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <spacer>
+                 <property name="orientation">
+                  <enum>Qt::Horizontal</enum>
+                 </property>
+                 <property name="sizeHint" stdset="0">
+                  <size>
+                   <width>40</width>
+                   <height>0</height>
+                  </size>
+                 </property>
+                </spacer>
+               </item>
+              </layout>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPlainTextEdit" name="logOutput">
+              <property name="lineWrapMode">
+               <enum>QPlainTextEdit::WidgetWidth</enum>
+              </property>
+              <property name="readOnly">
+               <bool>true</bool>
+              </property>
+              <property name="placeholderText">
+               <string>Pipeline output will appear here...</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+          <widget class="QWidget" name="tabDockerLogs">
+           <attribute name="title">
+            <string>Docker Logs</string>
+           </attribute>
+           <widget class="QFrame" name="dockerHeaderFrame_2">
+            <property name="geometry">
+             <rect>
+              <x>0</x>
+              <y>0</y>
+              <width>612</width>
+              <height>32</height>
+             </rect>
+            </property>
+            <property name="styleSheet">
+             <string notr="true">
+QFrame#dockerHeaderFrame_2 {
+    background-color: #12151a;
+    border-bottom: 1px solid #252c3a;
+    min-height: 30px;
+    max-height: 30px;
+}
+               </string>
+            </property>
+            <property name="frameShape">
+             <enum>QFrame::StyledPanel</enum>
+            </property>
+            <layout class="QHBoxLayout" name="logHeaderLayout_3">
+             <property name="spacing">
+              <number>8</number>
+             </property>
+             <property name="leftMargin">
+              <number>12</number>
+             </property>
+             <property name="topMargin">
+              <number>0</number>
+             </property>
+             <property name="rightMargin">
+              <number>12</number>
+             </property>
+             <property name="bottomMargin">
+              <number>0</number>
+             </property>
+             <item>
+              <widget class="QLabel" name="dockerpanelLabel">
+               <property name="text">
+                <string>LIVE OUTPUT</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QLabel" name="dockerStatusBadge">
+               <property name="text">
+                <string>● IDLE</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <spacer>
+               <property name="orientation">
+                <enum>Qt::Horizontal</enum>
+               </property>
+               <property name="sizeHint" stdset="0">
+                <size>
+                 <width>40</width>
+                 <height>0</height>
+                </size>
+               </property>
+              </spacer>
+             </item>
+             <item>
+              <widget class="QPushButton" name="launchButton">
+               <property name="enabled">
+                <bool>true</bool>
+               </property>
+               <property name="cursor">
+                <cursorShape>PointingHandCursor</cursorShape>
+               </property>
+               <property name="styleSheet">
+                <string notr="true">QPushButton#launchButton {
+    background-color: #22c55e;
+    color: #ffffff;
+    border: none;
+    border-radius: 3px;
+    font-family: &quot;Courier New&quot;, monospace;
+    font-size: 12px;
+    font-weight: bold;
+    letter-spacing: 2px;
+    padding: 9px 16px;
+    margin-top: 2px;
+}
+QPushButton#launchButton:hover { 
+    background-color: #16a34a; 
+}
+QPushButton#launchButton:disabled { 
+    background-color: #1e2330; 
+    color: #5a6a82; 
+}</string>
+               </property>
+               <property name="text">
+                <string>Launch Prototype</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="stopPrototypeButton">
+               <property name="text">
+                <string>DESTORY</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+           <widget class="QPlainTextEdit" name="dockerlogOutput">
+            <property name="geometry">
+             <rect>
+              <x>0</x>
+              <y>20</y>
+              <width>612</width>
+              <height>670</height>
+             </rect>
+            </property>
+            <property name="lineWrapMode">
+             <enum>QPlainTextEdit::WidgetWidth</enum>
+            </property>
+            <property name="readOnly">
+             <bool>true</bool>
+            </property>
+            <property name="placeholderText">
+             <string>Pipeline output will appear here...</string>
+            </property>
+           </widget>
+          </widget>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QFrame" name="rightPanelFrame">
+       <property name="maximumSize">
+        <size>
+         <width>350</width>
+         <height>16777215</height>
+        </size>
+       </property>
+       <layout class="QVBoxLayout" name="rightLayout">
+        <property name="spacing">
+         <number>0</number>
+        </property>
+        <property name="leftMargin">
+         <number>0</number>
+        </property>
+        <property name="topMargin">
+         <number>0</number>
+        </property>
+        <property name="rightMargin">
+         <number>0</number>
+        </property>
+        <property name="bottomMargin">
+         <number>0</number>
+        </property>
+        <item>
+         <widget class="QFrame" name="fileTreeHeaderFrame">
+          <property name="styleSheet">
+           <string notr="true">
+QFrame#fileTreeHeaderFrame {
+    background-color: #12151a;
+    border-bottom: 1px solid #252c3a;
+    min-height: 30px;
+    max-height: 30px;
+}
+           </string>
+          </property>
+          <property name="frameShape">
+           <enum>QFrame::StyledPanel</enum>
+          </property>
+          <layout class="QHBoxLayout" name="fileTreeHeaderLayout">
+           <property name="leftMargin">
+            <number>12</number>
+           </property>
+           <property name="topMargin">
+            <number>0</number>
+           </property>
+           <property name="rightMargin">
+            <number>12</number>
+           </property>
+           <property name="bottomMargin">
+            <number>0</number>
+           </property>
+           <item>
+            <widget class="QLabel" name="fileTreeLabel">
+             <property name="styleSheet">
+              <string notr="true">color:#5a6a82; font-size:10px; font-weight:bold; letter-spacing:2px;</string>
+             </property>
+             <property name="text">
+              <string>OUTPUT DIRECTORY</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <spacer>
+             <property name="orientation">
+              <enum>Qt::Horizontal</enum>
+             </property>
+             <property name="sizeHint" stdset="0">
+              <size>
+               <width>5</width>
+               <height>0</height>
+              </size>
+             </property>
+            </spacer>
+           </item>
+           <item>
+            <widget class="QLabel" name="fileCountLabel">
+             <property name="styleSheet">
+              <string notr="true">color:#5a6a82; font-size:10px;</string>
+             </property>
+             <property name="text">
+              <string>0 files</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </item>
+        <item>
+         <widget class="QTreeWidget" name="fileTree">
+          <property name="focusPolicy">
+           <enum>Qt::NoFocus</enum>
+          </property>
+          <property name="selectionMode">
+           <enum>QAbstractItemView::NoSelection</enum>
+          </property>
+          <property name="indentation">
+           <number>16</number>
+          </property>
+          <property name="animated">
+           <bool>true</bool>
+          </property>
+          <property name="headerHidden">
+           <bool>true</bool>
+          </property>
+          <column>
+           <property name="text">
+            <string>File</string>
+           </property>
+          </column>
+         </widget>
+        </item>
+        <item>
+         <widget class="QFrame" name="dockerFrame">
+          <property name="frameShape">
+           <enum>QFrame::StyledPanel</enum>
+          </property>
+          <layout class="QVBoxLayout" name="dockerLayout">
+           <property name="spacing">
+            <number>0</number>
+           </property>
+           <property name="leftMargin">
+            <number>0</number>
+           </property>
+           <property name="topMargin">
+            <number>0</number>
+           </property>
+           <property name="rightMargin">
+            <number>0</number>
+           </property>
+           <property name="bottomMargin">
+            <number>0</number>
+           </property>
+           <item>
+            <widget class="QFrame" name="dockerHeaderFrame">
+             <property name="styleSheet">
+              <string notr="true">
+QFrame#dockerHeaderFrame {
+    background-color: #12151a;
+    border-bottom: 1px solid #252c3a;
+    min-height: 30px;
+    max-height: 30px;
+}
+              </string>
+             </property>
+             <layout class="QHBoxLayout" name="dockerHeaderLayout">
+              <property name="leftMargin">
+               <number>12</number>
+              </property>
+              <property name="topMargin">
+               <number>0</number>
+              </property>
+              <property name="rightMargin">
+               <number>12</number>
+              </property>
+              <property name="bottomMargin">
+               <number>0</number>
+              </property>
+              <item>
+               <widget class="QLabel" name="dockerTitleLabel">
+                <property name="styleSheet">
+                 <string notr="true">color:#5a6a82; font-size:10px; font-weight:bold; letter-spacing:2px;</string>
+                </property>
+                <property name="text">
+                 <string>DOCKER CONTAINERS</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer>
+                <property name="orientation">
+                 <enum>Qt::Horizontal</enum>
+                </property>
+                <property name="sizeHint" stdset="0">
+                 <size>
+                  <width>5</width>
+                  <height>0</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+             </layout>
+            </widget>
+           </item>
+           <item>
+            <widget class="QTableWidget" name="dockerTable">
+             <property name="verticalScrollBarPolicy">
+              <enum>Qt::ScrollBarAlwaysOff</enum>
+             </property>
+             <property name="horizontalScrollBarPolicy">
+              <enum>Qt::ScrollBarAlwaysOff</enum>
+             </property>
+             <property name="editTriggers">
+              <set>QAbstractItemView::NoEditTriggers</set>
+             </property>
+             <property name="alternatingRowColors">
+              <bool>false</bool>
+             </property>
+             <property name="selectionMode">
+              <enum>QAbstractItemView::NoSelection</enum>
+             </property>
+             <property name="showGrid">
+              <bool>false</bool>
+             </property>
+             <property name="rowCount">
+              <number>3</number>
+             </property>
+             <property name="columnCount">
+              <number>4</number>
+             </property>
+             <attribute name="horizontalHeaderVisible">
+              <bool>true</bool>
+             </attribute>
+             <attribute name="horizontalHeaderDefaultSectionSize">
+              <number>80</number>
+             </attribute>
+             <attribute name="horizontalHeaderStretchLastSection">
+              <bool>true</bool>
+             </attribute>
+             <attribute name="verticalHeaderVisible">
+              <bool>false</bool>
+             </attribute>
+             <row/>
+             <row/>
+             <row/>
+             <column>
+              <property name="text">
+               <string>STATUS</string>
+              </property>
+             </column>
+             <column>
+              <property name="text">
+               <string>CONTAINER</string>
+              </property>
+             </column>
+             <column>
+              <property name="text">
+               <string>PORT</string>
+              </property>
+             </column>
+             <column>
+              <property name="text">
+               <string>STATE</string>
+              </property>
+             </column>
+             <item row="0" column="1">
+              <property name="text">
+               <string>app_frontend</string>
+              </property>
+             </item>
+             <item row="0" column="2">
+              <property name="text">
+               <string>:3000</string>
+              </property>
+             </item>
+             <item row="0" column="3">
+              <property name="text">
+               <string>queued</string>
+              </property>
+             </item>
+             <item row="1" column="1">
+              <property name="text">
+               <string>app_backend</string>
+              </property>
+             </item>
+             <item row="1" column="2">
+              <property name="text">
+               <string>:8000</string>
+              </property>
+             </item>
+             <item row="1" column="3">
+              <property name="text">
+               <string>queued</string>
+              </property>
+             </item>
+             <item row="2" column="1">
+              <property name="text">
+               <string>app_postgres</string>
+              </property>
+             </item>
+             <item row="2" column="2">
+              <property name="text">
+               <string>:5432</string>
+              </property>
+             </item>
+             <item row="2" column="3">
+              <property name="text">
+               <string>queued</string>
+              </property>
+             </item>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QMenuBar" name="menuBar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>1216</width>
+     <height>23</height>
+    </rect>
+   </property>
+   <widget class="QMenu" name="menuFile">
+    <property name="title">
+     <string>File</string>
+    </property>
+    <addaction name="actionNewProject"/>
+    <addaction name="actionOpenOutput"/>
+    <addaction name="separator"/>
+    <addaction name="actionQuit"/>
+   </widget>
+   <widget class="QMenu" name="menuProject">
+    <property name="title">
+     <string>Project</string>
+    </property>
+    <addaction name="actionClearOutput"/>
+    <addaction name="actionSetOutputDir"/>
+   </widget>
+   <widget class="QMenu" name="menuSettings">
+    <property name="title">
+     <string>Settings</string>
+    </property>
+    <addaction name="actionPreferences"/>
+   </widget>
+   <addaction name="menuFile"/>
+   <addaction name="menuProject"/>
+   <addaction name="menuSettings"/>
+  </widget>
+  <action name="actionNewProject">
+   <property name="text">
+    <string>New Project</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+N</string>
+   </property>
+  </action>
+  <action name="actionOpenOutput">
+   <property name="text">
+    <string>Open Output Folder</string>
+   </property>
+  </action>
+  <action name="actionQuit">
+   <property name="text">
+    <string>Quit</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Q</string>
+   </property>
+  </action>
+  <action name="actionClearOutput">
+   <property name="text">
+    <string>Clear Output</string>
+   </property>
+  </action>
+  <action name="actionSetOutputDir">
+   <property name="text">
+    <string>Set Output Directory...</string>
+   </property>
+  </action>
+  <action name="actionConfigureAgents">
+   <property name="text">
+    <string>Configure Agents...</string>
+   </property>
+  </action>
+  <action name="actionResetPipeline">
+   <property name="text">
+    <string>Reset Pipeline</string>
+   </property>
+  </action>
+  <action name="actionStartContainers">
+   <property name="text">
+    <string>Start All Containers</string>
+   </property>
+  </action>
+  <action name="actionStopContainers">
+   <property name="text">
+    <string>Stop All Containers</string>
+   </property>
+  </action>
+  <action name="actionViewLogs">
+   <property name="text">
+    <string>View Docker Logs</string>
+   </property>
+  </action>
+  <action name="actionPreferences">
+   <property name="text">
+    <string>Preferences...</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+,</string>
+   </property>
+  </action>
+  <action name="actionAbout">
+   <property name="text">
+    <string>About ArchitectAI</string>
+   </property>
+  </action>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

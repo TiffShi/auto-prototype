@@ -2,6 +2,9 @@ import sys
 import os
 import traceback
 import docker
+import re
+import uuid
+import webbrowser
 from docker.errors import NotFound, APIError
 from datetime import datetime
 
@@ -12,7 +15,9 @@ if parent_dir not in sys.path:
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QListWidgetItem,
-    QTreeWidgetItem, QTableWidgetItem, QHeaderView, QWidget, QHBoxLayout, QVBoxLayout, QLabel, QMessageBox, QGraphicsDropShadowEffect, QDialog, QFormLayout, QLineEdit, QDialogButtonBox
+    QTreeWidgetItem, QTableWidgetItem, QHeaderView, QWidget, QHBoxLayout, QVBoxLayout, QLabel, 
+    QMessageBox, QGraphicsDropShadowEffect, QDialog, QFormLayout, QLineEdit, 
+    QDialogButtonBox, QFileDialog, QInputDialog, QPushButton, QTextBrowser
 )
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, QVariantAnimation, QObject, QTimer, QSettings
@@ -35,14 +40,7 @@ def get_resource_path(relative_path):
         base_path = os.path.dirname(os.path.abspath(__file__))
 
     return os.path.join(base_path, relative_path).replace("\\", "/") # PyQt urls prefer forward slashes
-
-# Status dot unicode + color
-STATUS_IDLE    = ("●", "#2e3849")
-STATUS_RUNNING = ("●", "#3b82f6")
-STATUS_DONE    = ("●", "#22c55e")
-STATUS_WAITING = ("●", "#eab308")
-STATUS_ERROR   = ("●", "#ef4444")
-
+    
 # --- CONSOLIDATED AGENTS & METADATA ---
 AGENTS = {
     "pm":       {"index": 0,    "log_name": "[PM]","name": "Program Manager", "role": "ORCHESTRATOR",   "color": "#3b82f6", "icon_file": "pm_icon.svg", "progress": 15},
@@ -70,6 +68,103 @@ class EmittingStream(QObject):
     def flush(self):
         pass
 
+class LauncherWorker(QThread):
+    log_line = pyqtSignal(str, str, str)  # agent, message, color
+    finished_launch = pyqtSignal(bool)
+
+    def __init__(self, project_dir, project_name):
+        super().__init__()
+        self.project_dir = project_dir
+        self.project_name = project_name.lower().replace("_", "-") # Docker names must be lowercase
+        try:
+            self.client = docker.from_env()
+        except Exception:
+            self.client = None
+
+    def run(self):
+        if not self.client:
+            self.log_line.emit("[SYSTEM]", "Failed to connect to Docker.", "#ef4444")
+            self.finished_launch.emit(False)
+            return
+
+        image_name = f"autoprototype-{self.project_name}"
+        container_name = f"{image_name}-live"
+
+        try:
+            # 1. Build the Image
+            self.log_line.emit("[SYSTEM]", f"Building Docker image '{image_name}'...", "#3b82f6")
+            self.client.images.build(
+                path=self.project_dir,
+                tag=image_name,
+                rm=True 
+            )
+            self.log_line.emit("[SYSTEM]", "Image built successfully.", "#22c55e")
+
+            # 2. Cleanup existing container if it exists
+            try:
+                old_container = self.client.containers.get(container_name)
+                old_container.remove(force=True)
+                self.log_line.emit("[SYSTEM]", "Removed older running instance.", "#eab308")
+            except docker.errors.NotFound:
+                pass
+
+            # 3. Run the Container
+            self.log_line.emit("[SYSTEM]", "Starting prototype containers...", "#3b82f6")
+            container = self.client.containers.run(
+                image=image_name,
+                command="bash startup.sh",
+                detach=True,
+                cap_drop = ['ALL'],
+                ports={'8080/tcp': 8080, '5173/tcp': 5173},
+                name=container_name
+            )
+
+            self.log_line.emit("[SYSTEM]", f"Prototype is LIVE! Container ID: {container.id[:8]}", "#22c55e")
+            self.log_line.emit("[SYSTEM]", "Frontend: http://localhost:5173", "#22c55e")
+            self.log_line.emit("[SYSTEM]", "Backend: http://localhost:8080", "#22c55e")
+            
+            self.finished_launch.emit(True)
+
+        except Exception as e:
+            self.log_line.emit("[SYSTEM]", f"Launch failed: {str(e)}", "#ef4444")
+            self.finished_launch.emit(False)
+
+class StopperWorker(QThread):
+    log_line = pyqtSignal(str, str, str)
+    finished_stop = pyqtSignal(bool)
+
+    def __init__(self, container_name):
+        super().__init__()
+        self.container_name = container_name
+        try:
+            self.client = docker.from_env()
+        except Exception:
+            self.client = None
+
+    def run(self):
+        if not self.client:
+            self.log_line.emit("[SYSTEM]", "Failed to connect to Docker.", "#ef4444")
+            self.finished_stop.emit(False)
+            return
+
+        try:
+            self.log_line.emit("[SYSTEM]", f"Stopping container '{self.container_name}'...", "#eab308")
+            
+            # Find the container, stop it, and destroy it
+            container = self.client.containers.get(self.container_name)
+            container.stop(timeout=5) 
+            container.remove(force=True)
+            
+            self.log_line.emit("[SYSTEM]", f"Container '{self.container_name}' destroyed successfully.", "#ef4444")
+            self.finished_stop.emit(True)
+            
+        except docker.errors.NotFound:
+            self.log_line.emit("[SYSTEM]", f"Container '{self.container_name}' not found.", "#ef4444")
+            self.finished_stop.emit(False)
+        except Exception as e:
+            self.log_line.emit("[SYSTEM]", f"Failed to stop container: {str(e)}", "#ef4444")
+            self.finished_stop.emit(False)
+
 class PipelineWorker(QThread):
     log_line = pyqtSignal(str, str, str)  
     progress = pyqtSignal(int)            
@@ -77,11 +172,12 @@ class PipelineWorker(QThread):
     finished_pipeline = pyqtSignal(dict)  
     new_file = pyqtSignal(str)
 
-    def __init__(self, prompt):
+    def __init__(self, prompt, project_dir):
         super().__init__()
         self.prompt = prompt
         self._is_running = True
         self._seen_files = set()
+        self.project_dir = project_dir
 
     def run(self):
         load_dotenv()
@@ -104,12 +200,12 @@ class PipelineWorker(QThread):
             
             state = {
                 "user_idea": self.prompt,
+                "project_dir": self.project_dir,
                 "error_messages": [],
                 "iteration_count": 0
             }
 
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            output_dir = os.path.join(current_dir, "output_prototype")
+            output_dir = self.project_dir
             
             first_node = next((edge.target for edge in app.get_graph().edges if edge.source == "__start__"), "pm")
             if first_node in AGENTS:
@@ -320,14 +416,22 @@ class DockerMonitorWorker(QThread):
     def __init__(self):
         super().__init__()
         self._is_running = True
+        self.client = None
+        self._try_connect()
+
+    def _try_connect(self):
+        """Attempts to establish a connection to the Docker daemon."""
         try:
             self.client = docker.from_env()
+            self.client.ping() # Ensure it's actually responsive
         except Exception:
             self.client = None
 
     def run(self):
         while self._is_running:
+            # --- FIX: Auto-reconnect if Docker wasn't running on launch ---
             if not self.client:
+                self._try_connect()
                 self.sleep(2)
                 continue
 
@@ -355,8 +459,10 @@ class DockerMonitorWorker(QThread):
                     })
                 
                 self.docker_update.emit(update_data)
-            except Exception as e:
-                pass 
+            except Exception:
+                # If Docker crashes while the app is running, drop the client
+                # so it can attempt to reconnect on the next loop
+                self.client = None 
             
             self.sleep(1) 
 
@@ -367,9 +473,9 @@ class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Preferences")
-        self.setFixedSize(450, 150)
+        # Slightly increased height to accommodate the new row
+        self.setFixedSize(480, 180) 
         
-        # Match your dark theme
         self.setStyleSheet("""
             QDialog { background-color: #12151a; color: #c8d4e8; }
             QLabel { color: #c8d4e8; font-weight: bold; font-size: 12px; }
@@ -390,17 +496,35 @@ class SettingsDialog(QDialog):
         layout = QVBoxLayout(self)
         form_layout = QFormLayout()
         
+        # --- API KEY ---
         self.api_key_input = QLineEdit()
         self.api_key_input.setEchoMode(QLineEdit.EchoMode.Password) 
         self.api_key_input.setPlaceholderText("sk-ant-...")
         
-        # Load existing key
+        # --- NEW: DIRECTORY SELECTION ---
+        self.dir_input = QLineEdit()
+        self.dir_input.setPlaceholderText("Default: ~/Documents/AutoPrototypes")
+        
+        self.browse_btn = QPushButton("Browse...")
+        self.browse_btn.clicked.connect(self._browse_directory)
+        
+        # Create a horizontal layout to put the text box and button side-by-side
+        dir_layout = QHBoxLayout()
+        dir_layout.setContentsMargins(0, 0, 0, 0)
+        dir_layout.addWidget(self.dir_input)
+        dir_layout.addWidget(self.browse_btn)
+
+        # Load existing settings
         self.settings = QSettings("AutoPrototype", "AppSettings")
-        saved_key = self.settings.value("anthropic_api_key", "")
-        if saved_key:
+        
+        if saved_key := self.settings.value("anthropic_api_key", ""):
             self.api_key_input.setText(saved_key)
             
+        if saved_dir := self.settings.value("output_directory", ""):
+            self.dir_input.setText(saved_dir)
+            
         form_layout.addRow("Anthropic API Key:", self.api_key_input)
+        form_layout.addRow("Output Directory:", dir_layout)
         layout.addLayout(form_layout)
         
         self.button_box = QDialogButtonBox(
@@ -409,27 +533,126 @@ class SettingsDialog(QDialog):
         self.button_box.accepted.connect(self.save_settings)
         self.button_box.rejected.connect(self.reject)
         layout.addWidget(self.button_box)
+
+    def _browse_directory(self):
+        """Opens a native file dialog to select the output folder."""
+        # Start looking in the currently saved dir, or default to home
+        start_dir = self.dir_input.text() or os.path.expanduser("~")
+
+        directory = QFileDialog.getExistingDirectory(
+            self, 
+            "Select Output Directory", 
+            start_dir,
+        )
+        
+        if directory:
+            self.dir_input.setText(directory)
         
     def save_settings(self):
         key = self.api_key_input.text().strip()
+        out_dir = self.dir_input.text().strip()
+        
         self.settings.setValue("anthropic_api_key", key)
+        self.settings.setValue("output_directory", out_dir)
+        
         if key:
             os.environ["ANTHROPIC_API_KEY"] = key
+            
         self.accept()
 
+class ProjectSetupDialog(QDialog):
+    def __init__(self, default_dir, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("New Prototype Project")
+        self.setFixedSize(450, 150)
+        
+        # Apply the exact same stylesheet used in your SettingsDialog
+        self.setStyleSheet("""
+            QDialog { background-color: #12151a; color: #c8d4e8; }
+            QLabel { color: #c8d4e8; font-weight: bold; font-size: 12px; }
+            QLineEdit { 
+                background-color: #1e2330; color: #ffffff; 
+                border: 1px solid #2e3849; border-radius: 4px; 
+                padding: 6px; font-family: "Courier New", monospace;
+            }
+            QLineEdit:focus { border: 1px solid #3b82f6; }
+            QPushButton { 
+                background-color: #3b82f6; color: #ffffff; 
+                border: none; border-radius: 4px; padding: 6px 16px; 
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #1d4ed8; }
+        """)
+        
+        layout = QVBoxLayout(self)
+        form_layout = QFormLayout()
+        
+        self.name_input = QLineEdit()
+        self.name_input.setPlaceholderText("AutoPrototype_xyz")
+        
+        self.dir_input = QLineEdit()
+        self.dir_input.setText(default_dir)
+        
+        self.browse_btn = QPushButton("Browse...")
+        self.browse_btn.clicked.connect(self._browse_directory)
+        
+        dir_layout = QHBoxLayout()
+        dir_layout.setContentsMargins(0, 0, 0, 0)
+        dir_layout.addWidget(self.dir_input)
+        dir_layout.addWidget(self.browse_btn)
+
+        form_layout.addRow("Project Name:", self.name_input)
+        form_layout.addRow("Output Directory:", dir_layout)
+        layout.addLayout(form_layout)
+        
+        self.button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+        layout.addWidget(self.button_box)
+
+    def _browse_directory(self):
+        start_dir = self.dir_input.text() or os.path.expanduser("~")
+        directory = QFileDialog.getExistingDirectory(self, "Select Output Directory", start_dir)
+        if directory:
+            self.dir_input.setText(directory)
+
+    def get_values(self):
+        return self.name_input.text().strip(), self.dir_input.text().strip()
+    
 class MainWindow(QMainWindow, Ui_MainWindow):
     def __init__(self):
         super().__init__()
         self.setupUi(self)
 
-        self.setStyleSheet(self.styleSheet() + """
-            QTextEdit#promptEdit:disabled {
-                background-color: #12151a;   /* Darker, muted background */
-                color: #5a6a82;              /* Dimmed gray text */
-                border: 1px solid #1e2330;   /* Dimmed border */
+        # --- NEW: Swap to QTextBrowser for clickable links ---
+        self.allLogsLayout.removeWidget(self.logOutput)
+        self.logOutput.deleteLater()
+        
+        self.logOutput = QTextBrowser(self.tabAllLogs)
+        self.logOutput.setObjectName("logOutput")
+        self.logOutput.setOpenLinks(False) # This makes links open in your default browser!
+        self.logOutput.setOpenExternalLinks(False) # This makes links open in your default browser!
+        self.logOutput.anchorClicked.connect(self._handle_link_click) # Route to our custom handler
+        self.logOutput.setLineWrapMode(QTextBrowser.LineWrapMode.WidgetWidth)
+        
+        # Manually transfer the CSS since we changed the widget type
+        self.logOutput.setStyleSheet("""
+            QTextBrowser#logOutput {
+                background-color: #0d0f12;
+                border: none;
+                color: #c8d4e8;
+                padding: 8px;
+                selection-background-color: #1e3a5f;
             }
         """)
+        self.allLogsLayout.addWidget(self.logOutput)
 
+        prompt_font = QFont("Courier New", 12)
+        prompt_font.setStyleHint(QFont.StyleHint.Monospace)
+        self.promptEdit.setFont(prompt_font)
+        
         console_font = QFont("Courier New", 9) 
         console_font.setStyleHint(QFont.StyleHint.Monospace)
         console_font.setFixedPitch(True)
@@ -510,6 +733,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def _update_spinner(self):
         """Advances the SVG spinner animation by rotating it."""
+        # Ensure the set exists
+        if not hasattr(self, 'active_spinner_buttons'):
+            self.active_spinner_buttons = set()
+
         self.spinner_angle = (self.spinner_angle + 15) % 360  # Rotate 15 degrees per tick
         
         size = self.spinner_base.width()
@@ -528,18 +755,28 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         painter.drawPixmap(0, 0, self.spinner_base)
         painter.end()
         
-        # Apply the rotated image as the button's icon
-        self.runButton.setIcon(QIcon(rotated))
-        self.runButton.setIconSize(QSize(20, 20))
+        # Apply the rotated image as the icon to any button currently loading
+        icon = QIcon(rotated)
+        for btn in self.active_spinner_buttons:
+            btn.setIcon(icon)
+            btn.setIconSize(QSize(20, 20))
 
     def _reset_button_states(self):
         """Restores the buttons to their default idle configurations."""
-        self.spinner_timer.stop()
-        self.runButton.setIcon(QIcon())
-        self.runButton.setText("▶   RUN PIPELINE")
+        if hasattr(self, 'active_spinner_buttons') and self.runButton in self.active_spinner_buttons:
+            self.active_spinner_buttons.remove(self.runButton)
+            
+        # Only stop the timer if NO buttons are loading
+        if not hasattr(self, 'active_spinner_buttons') or not self.active_spinner_buttons:
+            self.spinner_timer.stop()
+            
+        self.runButton.setIcon(QIcon())               # <-- Apply the loaded icon
+        self.runButton.setText("▶ RUN PIPELINE")         # <-- Remove the text arrow
         self.runButton.setEnabled(True)
         self.stopButton.setEnabled(False)
-        self.promptEdit.setDisabled(False)
+        self.promptEdit.setReadOnly(False)
+
+        self.promptEdit.setStyleSheet("")
 
     def _start_docker_monitor(self):
         self.docker_worker = DockerMonitorWorker()
@@ -639,15 +876,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.dockerTable.setColumnWidth(2, 70)
         self.dockerTable.setColumnWidth(3, 80)
 
-        for row in range(self.dockerTable.rowCount()):
-            dot = QTableWidgetItem("●")
-            dot.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            dot.setForeground(QColor(STATUS_IDLE[1]))
-            self.dockerTable.setItem(row, 0, dot)
+        self.dockerTable.setRowCount(0)
 
     def _connect_signals(self):
         self.runButton.clicked.connect(self._on_run)
         self.stopButton.clicked.connect(self._on_stop)
+
+        self.launchButton.clicked.connect(self._on_launch_prototype)
+
+        self.stopPrototypeButton.clicked.connect(self._on_stop_prototype)
 
         self.fileTree.itemClicked.connect(self._on_tree_item_clicked)
 
@@ -661,45 +898,95 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             return
 
         # 2. Check for API Key
-        load_dotenv() # Fallback for local .env testing
+        load_dotenv()
         if not os.getenv("ANTHROPIC_API_KEY"):
-            self._show_error_popup(
-                "Missing API Key", 
-                "Your Anthropic API key is not configured.\n\nPlease open 'Settings > Preferences...' to add your key before running the pipeline."
-            )
+            self._show_error_popup("Missing API Key", "Your Anthropic API key is not configured.\n\nPlease open 'Settings > Preferences...' to add your key.")
             return
 
-        # 3. Check for Docker Engine Connection
+        # 3. Check for Docker Engine
         try:
             client = docker.from_env()
             client.ping()
         except Exception:
-            self._show_error_popup(
-                "Docker Error", 
-                "Could not connect to Docker.\n\nPlease ensure Docker Desktop or the Docker daemon is running before starting the pipeline."
-            )
+            self._show_error_popup("Docker Error", "Could not connect to Docker.\n\nPlease ensure Docker is running.")
             return
+        
+        # --- NEW: PROMPT FOR DIRECTORY IF MISSING ---
+        settings = QSettings("AutoPrototype", "AppSettings")
+        base_dir = settings.value("output_directory", "").strip()
 
-        # Passed checks, start pipeline execution
+        if not base_dir or not os.path.isdir(base_dir):
+            base_dir = os.path.expanduser("~")
+
+        # --- NEW: Launch the unified, styled dialog ---
+        setup_dialog = ProjectSetupDialog(base_dir, self)
+        if setup_dialog.exec() == QDialog.DialogCode.Accepted:
+            project_name, final_dir = setup_dialog.get_values()
+        else:
+            return # User clicked Cancel
+            
+        # Update settings if they changed the directory
+        settings.setValue("output_directory", final_dir)
+            
+        if not project_name:
+            project_name = f"AutoPrototype_{uuid.uuid4().hex[:6]}"
+        else:
+            project_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', project_name)
+
+        # --- BUILD THE PROJECT FOLDER ---
+        self.current_project_dir = os.path.join(base_dir, project_name)
+        
+        # Collision handling: if they named it "MyApp" but "MyApp" already exists, append a random string
+        if os.path.exists(self.current_project_dir):
+             self.current_project_dir += f"_{uuid.uuid4().hex[:4]}"
+             
+        os.makedirs(self.current_project_dir, exist_ok=True)
+        
+        # Update the File Tree UI to point to the new folder name
+        self.fileTree.clear()
+        
+        # Extract just the folder name (e.g., "MyApp") rather than the full absolute path for the UI tree
+        display_name = os.path.basename(self.current_project_dir) 
+        root = QTreeWidgetItem(self.fileTree, [f"{display_name}/"])
+        root.setIcon(0, QIcon(get_resource_path("assets/closed_folder.svg")))
+        root.setExpanded(True)
+
+        # --- START PIPELINE EXECUTION ---
         self.runButton.setEnabled(False)
         self.stopButton.setEnabled(True)
-        self.promptEdit.setDisabled(True)
+        self.promptEdit.setReadOnly(True)
+
+        self.promptEdit.setStyleSheet("""
+            QTextEdit#promptEdit {
+                background-color: #12151a;
+                color: #5a6a82;
+                border: 1px solid #1e2330;
+                border-radius: 6px;
+            }
+        """)
+
+        if not hasattr(self, 'active_spinner_buttons'):
+            self.active_spinner_buttons = set()
+        self.active_spinner_buttons.add(self.runButton)
 
         self.spinner_angle = 0
         self.runButton.setText("  RUNNING PIPELINE") 
         self._update_spinner()       
-        self.spinner_timer.start(30)
-    
+        if not self.spinner_timer.isActive():
+            self.spinner_timer.start(30)
+            
         self.set_badge_state("RUNNING")
 
         self.logOutput.clear()
+        self._append_log("[SYSTEM]", f"Saving prototype to: {self.current_project_dir}", "#5a6a82")
         self._append_log("[SYSTEM]", "Pipeline initializing...", "#5a6a82")
         self.set_progress(0)
 
         for i in range(len(self.agent_widgets)):
             self.set_agent_status(i, "idle")
 
-        self.worker = PipelineWorker(prompt)
+        # Pass the dynamic path to the worker
+        self.worker = PipelineWorker(prompt, self.current_project_dir)
         self.worker.log_line.connect(self._append_log)
         self.worker.progress.connect(self.set_progress)
         self.worker.agent_status.connect(self.set_agent_status)
@@ -733,25 +1020,162 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.set_badge_state("WARNING")
             self._append_log("[SYSTEM]", f"Pipeline finished with {unresolved} unresolved bugs.", "#eab308")
 
+    def _on_stop_prototype(self):
+        try:
+            client = docker.from_env()
+            # Find all running containers created by AutoPrototype
+            containers = client.containers.list(filters={"name": "autoprototype-"})
+        except Exception:
+            self._show_error_popup("Docker Error", "Could not connect to Docker.")
+            return
+
+        if not containers:
+            self._show_error_popup("No Prototypes", "There are currently no live prototypes running.")
+            return
+
+        # Get the names of the running containers
+        container_names = [c.name for c in containers]
+
+        # Use PyQt's built-in dropdown dialog
+        selected_name, ok = QInputDialog.getItem(
+            self, 
+            "Stop Prototype", 
+            "Select a running prototype to destroy:", 
+            container_names, 
+            0, 
+            False
+        )
+
+        # If the user clicked "OK" and selected a container
+        if ok and selected_name:
+            self.stopPrototypeButton.setEnabled(False)
+            self.stopPrototypeButton.setText(" STOPPING...")
+            
+            # Add to the dynamic spinner system
+            if not hasattr(self, 'active_spinner_buttons'):
+                self.active_spinner_buttons = set()
+            self.active_spinner_buttons.add(self.stopPrototypeButton)
+            
+            self._update_spinner()
+            if not self.spinner_timer.isActive():
+                self.spinner_timer.start(30)
+            
+            # Spin up the background worker
+            self.stopper_worker = StopperWorker(selected_name)
+            self.stopper_worker.log_line.connect(self._append_log)
+            self.stopper_worker.finished_stop.connect(self._on_stop_finished)
+            self.stopper_worker.start()
+
+    def _on_stop_finished(self, success):
+        self.stopPrototypeButton.setEnabled(True)
+        
+        # Remove from spinner set and stop timer if empty
+        if hasattr(self, 'active_spinner_buttons') and self.stopPrototypeButton in self.active_spinner_buttons:
+            self.active_spinner_buttons.remove(self.stopPrototypeButton)
+            
+        if not hasattr(self, 'active_spinner_buttons') or not self.active_spinner_buttons:
+            self.spinner_timer.stop()
+            
+        self.stopPrototypeButton.setIcon(QIcon())
+        self.stopPrototypeButton.setText("■ DESTROY")
+        
+        if success:
+            # DISABLE the destroy button so it returns to gray
+            self.stopPrototypeButton.setEnabled(False) 
+            self.launchButton.setEnabled(True)
+            self._show_error_popup("Destroyed", "Prototype container has been successfully destroyed.")
+        else:
+            # If it failed to stop, keep it enabled (red) so they can try again
+            self.stopPrototypeButton.setEnabled(True) 
+            
+    def _on_launch_prototype(self):
+        # 1. Start the file picker in the user's saved output directory
+        settings = QSettings("AutoPrototype", "AppSettings")
+        base_dir = settings.value("output_directory", "").strip()
+        if not base_dir or not os.path.isdir(base_dir):
+            base_dir = os.path.expanduser("~")
+
+        # 2. Open dialog to select the specific prototype folder
+        target_dir = QFileDialog.getExistingDirectory(
+            self, 
+            "Select Prototype Directory to Launch", 
+            base_dir
+        )
+        
+        # If the user clicks "Cancel" on the popup, exit safely
+        if not target_dir:
+            return
+
+        # 3. Validation: Ensure the selected folder actually has a Dockerfile
+        if not os.path.exists(os.path.join(target_dir, "Dockerfile")):
+            self._show_error_popup(
+                "Invalid Prototype", 
+                f"No Dockerfile found in:\n{target_dir}\n\nPlease select a valid generated prototype folder."
+            )
+            return
+
+        # 4. Update UI state
+        self.launchButton.setEnabled(False)
+        self.launchButton.setText(" BUILDING...")
+        
+        # Add the launch button to the spinner set
+        if not hasattr(self, 'active_spinner_buttons'):
+            self.active_spinner_buttons = set()
+        self.active_spinner_buttons.add(self.launchButton)
+        
+        self._update_spinner()
+        if not self.spinner_timer.isActive():
+            self.spinner_timer.start(30)
+        
+        # Extract the project name from the selected directory path (e.g. "AutoPrototype_xyz")
+        project_name = os.path.basename(target_dir)
+
+        # 5. Initialize and start the Launcher Worker with the SELECTED directory
+        self.launcher_worker = LauncherWorker(target_dir, project_name)
+        self.launcher_worker.log_line.connect(self._append_log)
+        self.launcher_worker.finished_launch.connect(self._on_launch_finished)
+        self.launcher_worker.start()
+
+    def _on_launch_finished(self, success):
+        
+        # Remove from spinner set and stop timer if empty
+        if hasattr(self, 'active_spinner_buttons') and self.launchButton in self.active_spinner_buttons:
+            self.active_spinner_buttons.remove(self.launchButton)
+            
+        if not hasattr(self, 'active_spinner_buttons') or not self.active_spinner_buttons:
+            self.spinner_timer.stop()
+            
+        self.launchButton.setIcon(QIcon())
+        self.launchButton.setText("▶ LAUNCH")
+        
+        if success:
+            # ENABLE the destroy button so it turns red
+            self.launchButton.setEnabled(False)
+            self.stopPrototypeButton.setEnabled(True) 
+            self._show_error_popup("Success!", "Prototype launched successfully!\n\nCheck the live output logs for localhost URLs.")
+        else:
+            self.launchButton.setEnabled(True)
+
     def _append_log(self, agent: str, message: str, color: str = "#c8d4e8"):
         timestamp = datetime.now().strftime("%H:%M:%S")
+
+        # --- GOAL 1: Force [SYSTEM] to be blue unless it's a red error ---
+        if agent == "[SYSTEM]" and color != "#ef4444":
+            color = "#f739a8" 
         
         cursor = self.logOutput.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
 
-        # 1. Force a strict monospaced font for the Python text cursor
         doc_font = QFont("Courier New", 9)
         doc_font.setStyleHint(QFont.StyleHint.Monospace)
         doc_font.setFixedPitch(True)
 
-        # 2. Use the exact same font to calculate the 26-character indent (11 timestamp + 15 agent)
         metrics = QFontMetrics(doc_font)
-        indent_pixels = metrics.horizontalAdvance(" " * 26) 
+        indent_pixels = metrics.horizontalAdvance(" " * 28) 
 
-        # Create a "Hanging Indent" block layout
         block_fmt = QTextBlockFormat()
-        block_fmt.setLeftMargin(indent_pixels)       # Push everything to the right
-        block_fmt.setTextIndent(-indent_pixels)      # Pull ONLY the first line back left
+        block_fmt.setLeftMargin(indent_pixels)       
+        block_fmt.setTextIndent(-indent_pixels)      
 
         fmt_timestamp = QTextCharFormat()
         fmt_timestamp.setForeground(QColor("#5a6a82"))
@@ -764,6 +1188,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         fmt_msg = QTextCharFormat()
         fmt_msg.setForeground(QColor("#c8d4e8"))
         fmt_msg.setFont(doc_font)
+
+        # Regex to isolate URLs
+        url_pattern = re.compile(r'(https?://\S+)')
 
         for line in message.splitlines():
             if not line.strip(): 
@@ -782,11 +1209,27 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             cursor.setCharFormat(fmt_agent)
             cursor.insertText(f"{agent:<10}")
             
-            # Insert the message
-            cursor.setCharFormat(fmt_msg)
-            cursor.insertText(line)
+            # --- GOAL 2: Parse and inject clickable URLs ---
+            parts = url_pattern.split(line)
+            for part in parts:
+                if url_pattern.match(part):
+                    fmt_link = QTextCharFormat(fmt_msg)
+                    fmt_link.setForeground(QColor("#93c5fd")) # Lighter blue for links
+                    fmt_link.setFontUnderline(True)
+                    fmt_link.setAnchor(True)
+                    fmt_link.setAnchorHref(part) # Assign the URL destination
+                    
+                    cursor.setCharFormat(fmt_link)
+                    cursor.insertText(part)
+                else:
+                    cursor.setCharFormat(fmt_msg)
+                    cursor.insertText(part)
 
         self.logOutput.ensureCursorVisible()
+
+    def _handle_link_click(self, url):
+        """Safely opens URLs using Python's native browser module instead of Qt's."""
+        webbrowser.open(url.toString())
 
     def _open_settings(self):
         """Opens the preferences dialog modal."""
@@ -898,8 +1341,28 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         return count
     
 if __name__ == "__main__":
+    import ctypes
+    import sys
+    # Make sure to import QIcon, QApplication etc. if they aren't already imported at the top
+
+    # 1. Force Windows/WSL taskbar to use a custom ID BEFORE QAplication is initialized
+    try:
+        # Create an even more distinct unique ID for your app
+        myappid = 'architectai.agentic_ai_prototype_frontend.v1' 
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+    except Exception:
+        # Fails gracefully if not applicable (like on macOS)
+        pass 
+
     app = QApplication(sys.argv)
     app.setStyle("Fusion") 
+    
+    # 2. Set the global application icon using the NEW .ICO file
+    # Ensure get_resource_path is correctly defined and imported
+    app_icon_path = get_resource_path("assets/logo.svg") 
+    app_icon = QIcon(app_icon_path)
+    app.setWindowIcon(app_icon)
+
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

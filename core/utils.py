@@ -23,18 +23,21 @@ def apply_patches(original_code: str, patch_text: str) -> str:
     return patched_code
 
 # --- NEW UTILITY: Extracted from your old file_saver_node ---
-def write_files_to_disk(state: AutoPrototypeState, base_dir="output_prototype"):
+def write_files_to_disk(state: AutoPrototypeState):
     """Parses code blocks and writes them to the output directory so Docker can build them."""
+
+    base_dir = state.get("project_dir", os.path.join(os.getcwd(),"output_prototype"))
     def parse_and_write(content, sub_folder):
         pattern = r"###\s+`?([\w\./_-]+\.\w+)`?\s+```\w*\n(.*?)```"
         blocks = re.findall(pattern, content, re.DOTALL)
         for file_path, code in blocks:
-            # FIX: Prevent double-nesting if the LLM includes 'backend/' or 'frontend/' in the file path
             clean_path = file_path.strip()
+
             if clean_path.startswith(f"{sub_folder}/"):
                 clean_path = clean_path[len(sub_folder)+1:]
                 
             full_path = os.path.join(base_dir, sub_folder, clean_path)
+            
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
             with open(full_path, "w") as f:
                 f.write(code.strip())

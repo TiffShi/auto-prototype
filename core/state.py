@@ -24,3 +24,5 @@ class AutoPrototypeState(TypedDict):
     execution_logs: Optional[str]
     error_messages: List[str]
     iteration_count: int
+
+    project_dir: Optional[str]

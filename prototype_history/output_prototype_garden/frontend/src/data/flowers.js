@@ -1,0 +1,61 @@
+export const FLOWERS = [
+  {
+    id: 'rose',
+    name: 'Rose',
+    emoji: '🌹',
+    label: 'Rose',
+    primaryColor: '#e8365d',
+    secondaryColor: '#ff8fa3',
+    centerColor: '#ffd700',
+    petalCount: 5,
+    description: 'Classic & romantic',
+  },
+  {
+    id: 'sunflower',
+    name: 'Sunflower',
+    emoji: '🌻',
+    label: 'Sunflower',
+    primaryColor: '#ffc107',
+    secondaryColor: '#ff9800',
+    centerColor: '#5d3a1a',
+    petalCount: 12,
+    description: 'Bright & joyful',
+  },
+  {
+    id: 'tulip',
+    name: 'Tulip',
+    emoji: '🌷',
+    label: 'Tulip',
+    primaryColor: '#e040fb',
+    secondaryColor: '#f48fb1',
+    centerColor: '#4a148c',
+    petalCount: 6,
+    description: 'Elegant & graceful',
+  },
+  {
+    id: 'cherry_blossom',
+    name: 'Cherry Blossom',
+    emoji: '🌸',
+    label: 'Cherry Blossom',
+    primaryColor: '#f8bbd0',
+    secondaryColor: '#fce4ec',
+    centerColor: '#e91e63',
+    petalCount: 5,
+    description: 'Delicate & fleeting',
+  },
+  {
+    id: 'daisy',
+    name: 'Daisy',
+    emoji: '🌼',
+    label: 'Daisy',
+    primaryColor: '#ffffff',
+    secondaryColor: '#e0e0e0',
+    centerColor: '#ffeb3b',
+    petalCount: 8,
+    description: 'Pure & cheerful',
+  },
+];
+
+export function getFlowerById(id) {
+  return FLOWERS.find((f) => f.id === id) || FLOWERS[0];
+}
