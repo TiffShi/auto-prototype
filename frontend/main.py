@@ -5,6 +5,7 @@ import docker
 import re
 import uuid
 import webbrowser
+import subprocess
 from docker.errors import NotFound, APIError
 from datetime import datetime
 
@@ -69,6 +70,7 @@ class EmittingStream(QObject):
     def flush(self):
         pass
 
+
 class LauncherWorker(QThread):
     log_line = pyqtSignal(str, str, str)  # agent, message, color
     finished_launch = pyqtSignal(bool)
@@ -76,56 +78,45 @@ class LauncherWorker(QThread):
     def __init__(self, project_dir, project_name):
         super().__init__()
         self.project_dir = project_dir
-        self.project_name = project_name.lower().replace("_", "-") # Docker names must be lowercase
-        try:
-            self.client = docker.from_env()
-        except Exception:
-            self.client = None
+        self.project_name = project_name.lower().replace("_", "-") 
 
     def run(self):
-        if not self.client:
-            self.log_line.emit("[SYSTEM]", "Failed to connect to Docker.", "#ef4444")
-            self.finished_launch.emit(False)
-            return
-
-        image_name = f"autoprototype-{self.project_name}"
-        container_name = f"{image_name}-live"
-
         try:
-            # 1. Build the Image
-            self.log_line.emit("[SYSTEM]", f"Building Docker image '{image_name}'...", "#3b82f6")
-            self.client.images.build(
-                path=self.project_dir,
-                tag=image_name,
-                rm=True 
-            )
-            self.log_line.emit("[SYSTEM]", "Image built successfully.", "#22c55e")
+            self.log_line.emit("[SYSTEM]", f"Spinning up Docker Compose for '{self.project_name}'...", "#3b82f6")
 
-            # 2. Cleanup existing container if it exists
-            try:
-                old_container = self.client.containers.get(container_name)
-                old_container.remove(force=True)
-                self.log_line.emit("[SYSTEM]", "Removed older running instance.", "#eab308")
-            except docker.errors.NotFound:
-                pass
+            safe_project_name = f"autoprototype-{self.project_name}"
 
-            # 3. Run the Container
-            self.log_line.emit("[SYSTEM]", "Starting prototype containers...", "#3b82f6")
-            container = self.client.containers.run(
-                image=image_name,
-                command="bash startup.sh",
-                detach=True,
-                cap_drop = ['ALL'],
-                ports={'8080/tcp': 8080, '5173/tcp': 5173},
-                name=container_name
+            # Run docker compose up --build -d in the project directory
+            process = subprocess.Popen(
+                ["docker", "compose", "-p", safe_project_name, "up", "--build", "-d"],
+                cwd=self.project_dir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,  # Merge stderr into stdout
+                text=True,
+                encoding='utf-8',
+                errors='replace'
             )
 
-            self.log_line.emit("[SYSTEM]", f"Prototype is LIVE! Container ID: {container.id[:8]}", "#22c55e")
-            self.log_line.emit("[SYSTEM]", "Frontend: http://localhost:5173", "#22c55e")
-            self.log_line.emit("[SYSTEM]", "Backend: http://localhost:8080", "#22c55e")
-            
-            self.finished_launch.emit(True)
+            # Stream the output live to your UI logs!
+            for line in process.stdout:
+                if line.strip():
+                    # We'll tag compose logs as DevOps for visual consistency
+                    self.log_line.emit("[DEVOPS]", line.strip(), "#0ea5e9")
 
+            process.wait()
+
+            if process.returncode == 0:
+                self.log_line.emit("[SYSTEM]", "Prototype is LIVE!", "#22c55e")
+                self.log_line.emit("[SYSTEM]", "Frontend: http://localhost:5173", "#22c55e")
+                self.log_line.emit("[SYSTEM]", "Backend: http://localhost:8080", "#22c55e")
+                self.finished_launch.emit(True)
+            else:
+                self.log_line.emit("[SYSTEM]", f"Launch failed with exit code {process.returncode}", "#ef4444")
+                self.finished_launch.emit(False)
+
+        except FileNotFoundError:
+            self.log_line.emit("[SYSTEM]", "Launch failed: 'docker compose' command not found. Is Docker installed and in your PATH?", "#ef4444")
+            self.finished_launch.emit(False)
         except Exception as e:
             self.log_line.emit("[SYSTEM]", f"Launch failed: {str(e)}", "#ef4444")
             self.finished_launch.emit(False)
@@ -149,21 +140,45 @@ class StopperWorker(QThread):
             return
 
         try:
-            self.log_line.emit("[SYSTEM]", f"Stopping container '{self.container_name}'...", "#eab308")
+            self.log_line.emit("[SYSTEM]", f"Preparing to destroy '{self.container_name}'...", "#eab308")
             
-            # Find the container, stop it, and destroy it
             container = self.client.containers.get(self.container_name)
-            container.stop(timeout=5) 
-            container.remove(force=True)
+            labels = container.attrs.get('Config', {}).get('Labels', {})
             
-            self.log_line.emit("[SYSTEM]", f"Container '{self.container_name}' destroyed successfully.", "#ef4444")
-            self.finished_stop.emit(True)
-            
+            project_dir = labels.get('com.docker.compose.project.working_dir')
+            # Extract the custom project name we injected during launch
+            compose_project = labels.get('com.docker.compose.project')
+
+            if project_dir and compose_project and os.path.exists(project_dir):
+                self.log_line.emit("[DEVOPS]", f"Running compose down for '{compose_project}'...", "#0ea5e9")
+                
+                # -> PASS THE -p FLAG TO DESTROY <-
+                process = subprocess.run(
+                    ["docker", "compose", "-p", compose_project, "down"], 
+                    cwd=project_dir,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True
+                )
+                
+                if process.returncode == 0:
+                    self.log_line.emit("[SYSTEM]", f"Prototype stack destroyed successfully.", "#ef4444")
+                    self.finished_stop.emit(True)
+                else:
+                    self.log_line.emit("[SYSTEM]", f"Docker Compose down failed:\n{process.stdout}", "#ef4444")
+                    self.finished_stop.emit(False)
+            else:
+                self.log_line.emit("[SYSTEM]", "Compose directory not found. Forcing container removal...", "#eab308")
+                container.stop(timeout=5) 
+                container.remove(force=True)
+                self.log_line.emit("[SYSTEM]", f"Container '{self.container_name}' destroyed.", "#ef4444")
+                self.finished_stop.emit(True)
+                
         except docker.errors.NotFound:
             self.log_line.emit("[SYSTEM]", f"Container '{self.container_name}' not found.", "#ef4444")
             self.finished_stop.emit(False)
         except Exception as e:
-            self.log_line.emit("[SYSTEM]", f"Failed to stop container: {str(e)}", "#ef4444")
+            self.log_line.emit("[SYSTEM]", f"Failed to stop prototype: {str(e)}", "#ef4444")
             self.finished_stop.emit(False)
 
 class PipelineWorker(QThread):
@@ -421,22 +436,21 @@ class DockerMonitorWorker(QThread):
         self._try_connect()
 
     def _try_connect(self):
-        """Attempts to establish a connection to the Docker daemon."""
         try:
             self.client = docker.from_env()
-            self.client.ping() # Ensure it's actually responsive
+            self.client.ping() 
         except Exception:
             self.client = None
 
     def run(self):
         while self._is_running:
-            # --- FIX: Auto-reconnect if Docker wasn't running on launch ---
             if not self.client:
                 self._try_connect()
                 self.sleep(2)
                 continue
 
             try:
+                # 1. RELAX THE FILTER: Look for the Compose label instead of a specific name
                 containers = self.client.containers.list(
                     all=True, 
                     filters={"name": "autoprototype-"}
@@ -444,6 +458,22 @@ class DockerMonitorWorker(QThread):
                 
                 update_data = []
                 for c in containers:
+                    # 2. CLEANER NAMES: Look for compose labels to format the UI nicely
+                    labels = c.attrs.get('Config', {}).get('Labels', {})
+                    compose_service = labels.get('com.docker.compose.service', '')
+
+                    # Since the project name is now 'autoprototype-itemtracker', 
+                    # let's clean it up for the UI to just show 'itemtracker [backend]'
+                    raw_project = labels.get('com.docker.compose.project', '')
+                    clean_project = raw_project.replace('autoprototype-', '')
+                    
+                    if clean_project and compose_service:
+                        # e.g., "autoprototype_xyz [frontend]"
+                        display_name = f"{clean_project} [{compose_service}]"
+                    else:
+                        display_name = c.name
+
+                    # 3. PORT EXTRACTION (Remains the same)
                     ports = []
                     port_data = c.attrs.get('NetworkSettings', {}).get('Ports', {})
                     if port_data:
@@ -454,15 +484,14 @@ class DockerMonitorWorker(QThread):
                     port_str = ", ".join(ports) if ports else "--"
                     
                     update_data.append({
-                        "name": c.name,
+                        "name": display_name,         # Pass the cleaned-up name to the UI
+                        "raw_name": c.name,           # (Optional) Keep raw name just in case
                         "status": c.status,
                         "ports": port_str
                     })
                 
                 self.docker_update.emit(update_data)
             except Exception:
-                # If Docker crashes while the app is running, drop the client
-                # so it can attempt to reconnect on the next loop
                 self.client = None 
             
             self.sleep(1) 
@@ -1024,8 +1053,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def _on_stop_prototype(self):
         try:
             client = docker.from_env()
-            # Find all running containers created by AutoPrototype
-            containers = client.containers.list(filters={"name": "autoprototype-"})
+            # SECURE FILTER: Only list containers in the dropdown that have our safe prefix
+            containers = client.containers.list(filters={"name": "autoprototype-"})        
         except Exception:
             self._show_error_popup("Docker Error", "Could not connect to Docker.")
             return
@@ -1107,18 +1136,26 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if not target_dir:
             return
 
-        # 3. Validation: Ensure the selected folder actually has a Dockerfile
-        if not os.path.exists(os.path.join(target_dir, "Dockerfile")):
+        # 3. Validation: Ensure the selected folder actually has a docker-compose file
+        compose_yml = os.path.join(target_dir, "docker-compose.yml")
+        compose_yaml = os.path.join(target_dir, "docker-compose.yaml")
+        
+        if not (os.path.exists(compose_yml) or os.path.exists(compose_yaml)):
             self._show_error_popup(
                 "Invalid Prototype", 
-                f"No Dockerfile found in:\n{target_dir}\n\nPlease select a valid generated prototype folder."
+                f"No docker-compose.yml found in:\n{target_dir}\n\nPlease select a valid generated prototype folder."
             )
             return
 
         # 4. Update UI state
         self.launchButton.setEnabled(False)
         self.launchButton.setText(" BUILDING...")
-        
+
+        # -> NEW: Clear the logs and print an initial status message <-
+        self.logOutput.clear()
+        self._append_log("[SYSTEM]", f"Preparing to launch prototype from:", "#5a6a82")
+        self._append_log("[SYSTEM]", f"{target_dir}", "#5a6a82")
+
         # Add the launch button to the spinner set
         if not hasattr(self, 'active_spinner_buttons'):
             self.active_spinner_buttons = set()

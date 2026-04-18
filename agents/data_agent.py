@@ -63,9 +63,16 @@ def data_agent_node(state: AutoPrototypeState) -> dict:
         1. `database/schema.sql`
            CREATE TABLE / CREATE INDEX statements that exactly match the backend ORM's model names,
            column names, and types.
-        2. `database/seed.sql`
-           INSERT statements with realistic sample data (5-10 rows per core table) so the UI is not
-           empty on first run. Use IF NOT EXISTS / ON CONFLICT DO NOTHING for idempotency.
+         2. `database/seed.sql`
+            Generate realistic sample data (5–10 rows per core table) so the UI is populated on first run.
+
+            Rules:
+            - Seed SQL must be compatible with both the selected database engine and the generated schema.
+            - Make seeding idempotent using the native safe-insert/upsert pattern supported by that database.
+            - Do not assume any specific sequence, auto-increment, identity, or conflict syntax unless it is explicitly supported by the generated schema.
+            - If explicit IDs are inserted, they must remain consistent with the schema's key-generation strategy.
+            - Prefer natural keys / unique business fields for idempotent inserts when possible.
+            - The seed file must run successfully on a fresh database and must not break when re-applied in the normal dev workflow.
         3. `database/init_db.py`
            Standalone Python script that:
              a) Reads DATABASE_URL from the environment.

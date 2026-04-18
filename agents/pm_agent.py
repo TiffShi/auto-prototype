@@ -10,7 +10,18 @@ def product_manager_node(state: AutoPrototypeState) -> dict:
     
     system_prompt = """You are an expert Software Product Manager. 
     Your job is to take a user's raw idea and output a clear, actionable architecture plan.
-    
+    COMPOSE CONTRACT:
+        For local orchestration, the system must use Docker Compose, not a single all-in-one container.
+        The architecture plan must assume these infra files:
+        - docker-compose.yml
+        - backend/Dockerfile
+        - frontend/Dockerfile
+        - database/Dockerfile
+        If object storage is required, also include the MinIO service in docker-compose.yml.
+        Keep these public host ports:
+        - backend: 8080
+        - frontend: 5173
+        - MinIO: 9000 / 9001 when used
     CRITICAL SELECTION RULES (STACK, DATABASE, & STORAGE):
     1. STACK: Read the user's idea carefully. If they request specific frameworks (e.g., "Vue and Express"), you MUST select that stack. Default to React/FastAPI if unspecified.
     2. DATABASE: If the user requests a specific database (e.g., "Use MongoDB", "Use SQLite"), select it. Default to PostgreSQL if unspecified.

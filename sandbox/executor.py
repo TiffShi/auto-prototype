@@ -1,113 +1,310 @@
 # sandbox/executor.py
-import docker
+
 import os
+import re
 import time
+import uuid
+import shutil
+import subprocess
+
 
 class SandboxExecutor:
     def __init__(self):
-        self.client = docker.from_env()
-        self.image_name = "autoprototype-dynamic-app"
         self.project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.default_project_name = "autoprototype"
 
     def _get_target_dir(self, state: dict) -> str:
-        """Dynamically retrieve the correct project directory from state."""
+        """
+        Dynamically retrieve the correct project directory from state.
+        """
         project_dir = state.get("project_dir", "frontend/output_prototype")
         if os.path.isabs(project_dir):
             return project_dir
         return os.path.join(self.project_root, project_dir)
 
-    def _write_infra_files(self, state):
-        """Helper to write the dynamically generated Dockerfile and startup script."""
+    def _docker_compose_cmd(self):
+        """
+        Prefer 'docker compose', but allow fallback to legacy 'docker-compose'.
+        Returns a list suitable for subprocess, e.g. ['docker', 'compose'].
+        """
+        if shutil.which("docker"):
+            try:
+                result = subprocess.run(
+                    ["docker", "compose", "version"],
+                    capture_output=True,
+                    text=True,
+                    timeout=15
+                )
+                if result.returncode == 0:
+                    return ["docker", "compose"]
+            except Exception:
+                pass
+
+        if shutil.which("docker-compose"):
+            return ["docker-compose"]
+
+        raise RuntimeError(
+            "Docker Compose is not available. Install Docker Desktop / docker compose plugin "
+            "or docker-compose."
+        )
+
+    def _parse_and_write_multifile_blocks(self, content: str, base_dir: str):
+        """
+        Parses blocks like:
+
+        ### docker-compose.yml
+        ```yaml
+        ...
+        ```
+
+        ### backend/Dockerfile
+        ```dockerfile
+        ...
+        ```
+
+        and writes them to disk.
+        """
+        if not content:
+            return
+
+        pattern = r"###\s+`?([\w\./_-]+(?:\.\w+)?)`?\s+```[\w-]*\n(.*?)```"
+        blocks = re.findall(pattern, content, re.DOTALL)
+
+        for rel_path, code in blocks:
+            rel_path = rel_path.strip()
+            code = code.strip()
+
+            full_path = os.path.join(base_dir, rel_path)
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+
+            with open(full_path, "w", newline="\n", encoding="utf-8") as f:
+                f.write(code + "\n")
+
+    def _write_infra_files(self, state: dict):
+        """
+        Writes infrastructure files for the generated prototype.
+
+        Preferred new format:
+        - state['infra_code'] contains ### file blocks
+
+        Backward-compatible fallback:
+        - state['dockerfile_content']
+        - state['startup_script_content']
+        """
         target_dir = self._get_target_dir(state)
         os.makedirs(target_dir, exist_ok=True)
-        
-        if state.get("dockerfile_content"):
-            with open(os.path.join(target_dir, "Dockerfile"), "w", newline='\n') as f:
-                f.write(state["dockerfile_content"])
-                
-        if state.get("startup_script_content"):
-            script_path = os.path.join(target_dir, "startup.sh")
-            with open(script_path, "w", newline='\n') as f:
-                f.write(state["startup_script_content"])
 
-    # --- FOR RUN_LIVE.PY ---
-    def build_prototype_image(self, target_dir: str):
-        """Builds the Docker image using the AI-generated prototype files."""
-        print(f"Building dynamic image '{self.image_name}' from {target_dir}...")
-        
-        self.client.images.build(
-            path=target_dir,
-            tag=self.image_name,
-            rm=True 
+        infra_code = state.get("infra_code")
+        if infra_code:
+            self._parse_and_write_multifile_blocks(infra_code, target_dir)
+
+        # Backward compatibility with the old single-container flow
+        dockerfile_content = state.get("dockerfile_content")
+        startup_script_content = state.get("startup_script_content")
+
+        if dockerfile_content:
+            with open(os.path.join(target_dir, "Dockerfile"), "w", newline="\n", encoding="utf-8") as f:
+                f.write(dockerfile_content.rstrip() + "\n")
+
+        if startup_script_content:
+            script_path = os.path.join(target_dir, "startup.sh")
+            with open(script_path, "w", newline="\n", encoding="utf-8") as f:
+                f.write(startup_script_content.rstrip() + "\n")
+
+    def _compose_file_exists(self, target_dir: str) -> bool:
+        return (
+            os.path.exists(os.path.join(target_dir, "docker-compose.yml"))
+            or os.path.exists(os.path.join(target_dir, "docker-compose.yaml"))
         )
-        print("Image built successfully with AI-generated Dockerfile.")
+
+    def _run_subprocess(self, cmd, cwd, timeout=300):
+        return subprocess.run(
+            cmd,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout
+        )
+
+    def _collect_compose_logs(self, compose_cmd, project_name: str, target_dir: str) -> str:
+        """
+        Collect logs per service in labeled sections so the debugger agent
+        can reason about backend/frontend/database/minio separately.
+        """
+        ps_result = self._run_subprocess(
+            compose_cmd + ["-p", project_name, "ps", "--services"],
+            cwd=target_dir,
+            timeout=60
+        )
+
+        services = [line.strip() for line in ps_result.stdout.splitlines() if line.strip()]
+        if not services:
+            # Fallback to general compose logs if service listing failed
+            all_logs = self._run_subprocess(
+                compose_cmd + ["-p", project_name, "logs", "--no-color"],
+                cwd=target_dir,
+                timeout=120
+            )
+            return (
+                "===== COMPOSE GENERAL LOGS =====\n"
+                f"{all_logs.stdout}\n"
+                f"{all_logs.stderr}"
+            )
+
+        sections = []
+        for svc in services:
+            svc_logs = self._run_subprocess(
+                compose_cmd + ["-p", project_name, "logs", "--no-color", svc],
+                cwd=target_dir,
+                timeout=120
+            )
+            sections.append(
+                f"===== SERVICE: {svc} =====\n"
+                f"{svc_logs.stdout}\n"
+                f"{svc_logs.stderr}".strip()
+            )
+
+        return "\n\n".join(sections)
+
+    def build_prototype_image(self, target_dir: str = None):
+        """
+        For live usage, build the compose project if docker-compose.yml exists.
+        Otherwise fall back to single Dockerfile build behavior.
+
+        This keeps run_live.py from exploding immediately if you have not
+        updated every caller yet.
+        """
+        target_dir = target_dir or os.path.join(self.project_root, "frontend/output_prototype")
+
+        if self._compose_file_exists(target_dir):
+            compose_cmd = self._docker_compose_cmd()
+            project_name = f"{self.default_project_name}_{uuid.uuid4().hex[:6]}"
+
+            print(f"Building compose project from {target_dir}...")
+            result = self._run_subprocess(
+                compose_cmd + ["-p", project_name, "build"],
+                cwd=target_dir,
+                timeout=600
+            )
+
+            if result.returncode != 0:
+                raise RuntimeError(
+                    "Compose build failed.\n\n"
+                    f"STDOUT:\n{result.stdout}\n\nSTDERR:\n{result.stderr}"
+                )
+
+            print("Compose project built successfully.")
+            return
+
+        # Legacy fallback
+        print(
+            "No docker-compose.yml found. This executor is now Compose-first.\n"
+            "If you still need legacy single-container live mode, update your runtime flow."
+        )
 
     def run_prototype(self):
-        """Spins up the container securely without host volume mounts."""
-        print(f"Starting prototype dynamically in '{self.image_name}'...")
+        """
+        Compose-first live runner.
+        Starts services detached and prints expected localhost URLs.
 
-        try:
-            container = self.client.containers.run(
-                image=self.image_name,
-                command="bash startup.sh",
-                detach=True,
-                cap_drop=["ALL"], # SECURITY: Drops root capabilities
-                ports={'8080/tcp': 8080, '5173/tcp': 5173},
-                name="autoprototype-live"
+        NOTE:
+        Because Compose project names are unique, stopping later requires the same name.
+        For now this is mostly a convenience method.
+        """
+        target_dir = os.path.join(self.project_root, "frontend/output_prototype")
+
+        if not self._compose_file_exists(target_dir):
+            raise RuntimeError(
+                "No docker-compose.yml found in the target directory. "
+                "Generate compose infra first."
             )
-            
-            print("\n--- Servers are Live! ---")
-            print(f"Container ID: {container.id[:10]}")
-            print("Frontend running at: http://localhost:5173")
-            print("Backend running at:  http://localhost:8080")
-            print("To stop: docker rm -f autoprototype-live")
-            
-            return container
 
-        except docker.errors.APIError as e:
-            print(f"Failed to start container: {e}")
+        compose_cmd = self._docker_compose_cmd()
+        project_name = f"{self.default_project_name}_{uuid.uuid4().hex[:6]}"
 
-    # --- FOR LANGGRAPH WORKFLOW ---
+        print(f"Starting compose project '{project_name}' from {target_dir}...")
+
+        result = self._run_subprocess(
+            compose_cmd + ["-p", project_name, "up", "--build", "-d"],
+            cwd=target_dir,
+            timeout=600
+        )
+
+        if result.returncode != 0:
+            raise RuntimeError(
+                "Compose up failed.\n\n"
+                f"STDOUT:\n{result.stdout}\n\nSTDERR:\n{result.stderr}"
+            )
+
+        print("\n--- Services are Live! ---")
+        print(f"Compose Project: {project_name}")
+        print("Frontend running at: http://localhost:5173")
+        print("Backend running at: http://localhost:8080")
+        print(f"To stop: {' '.join(compose_cmd)} -p {project_name} down -v")
+
     def test_prototype_and_get_logs(self, state) -> str:
-        """Builds, runs briefly to catch startup errors, grabs logs, and cleans up."""
+        """
+        Compose-first test flow:
+        1. write generated infra files
+        2. docker compose up --build -d
+        3. wait briefly
+        4. collect labeled logs per service
+        5. docker compose down -v
+
+        Returns a single log blob for the debugger agent.
+        """
         self._write_infra_files(state)
         target_dir = self._get_target_dir(state)
-        
-        try:
-            print(f" -> Executor: Building dynamic image from {target_dir} for mid-flight testing...")
-            self.client.images.build(
-                path=target_dir,
-                tag=self.image_name,
-                rm=True 
-            )
-            
-            print(" -> Executor: Spinning up container for 10 seconds to catch errors...")
-            
-            container = self.client.containers.run(
-                image=self.image_name,
-                command="bash startup.sh",
-                detach=True,
-                cap_drop=["ALL"],
-                name="autoprototype-test-run"
-            )
-            
-            # Wait for servers to attempt startup
-            time.sleep(10)
 
-            # Grab the combined logs
-            logs = container.logs().decode("utf-8")
-            
-            # Clean up immediately
-            container.stop()
-            container.remove()
-            
-            print(" -> Executor: Logs captured and container destroyed.")
+        if not self._compose_file_exists(target_dir):
+            return (
+                "EXECUTION FAILED:\n"
+                "docker-compose.yml was not found in the generated project directory.\n"
+                "The DevOps agent must now generate compose infrastructure."
+            )
+
+        compose_cmd = self._docker_compose_cmd()
+        project_name = f"{self.default_project_name}_{uuid.uuid4().hex[:6]}"
+
+        try:
+            print(f" -> Executor: Starting compose test run from {target_dir}...")
+
+            up_result = self._run_subprocess(
+                compose_cmd + ["-p", project_name, "up", "--build", "-d"],
+                cwd=target_dir,
+                timeout=600
+            )
+
+            if up_result.returncode != 0:
+                return (
+                    "DOCKER COMPOSE UP FAILED:\n\n"
+                    f"STDOUT:\n{up_result.stdout}\n\n"
+                    f"STDERR:\n{up_result.stderr}"
+                )
+
+            print(" -> Executor: Compose services started. Waiting 12 seconds for startup...")
+            time.sleep(12)
+
+            logs = self._collect_compose_logs(compose_cmd, project_name, target_dir)
+
+            print(" -> Executor: Logs captured. Tearing down compose project...")
             return logs
 
-        except docker.errors.BuildError as e:
-            fatal_error = e.msg
-            build_logs = "".join([log.get('stream', '') for log in e.build_log])
-            truncated_logs = build_logs[-2500:] if len(build_logs) > 2500 else build_logs
-            return f"DOCKER BUILD FAILED:\nFatal Error: {fatal_error}\n\nLast Output:\n{truncated_logs}"
+        except subprocess.TimeoutExpired as e:
+            return f"EXECUTION FAILED:\nCommand timed out: {e}"
         except Exception as e:
             return f"EXECUTION FAILED:\n{str(e)}"
+        finally:
+            try:
+                down_result = self._run_subprocess(
+                    compose_cmd + ["-p", project_name, "down", "-v", "--remove-orphans"],
+                    cwd=target_dir,
+                    timeout=180
+                )
+                if down_result.returncode != 0:
+                    print(
+                        " -> Executor Warning: compose down returned non-zero exit code.\n"
+                        f"STDOUT:\n{down_result.stdout}\nSTDERR:\n{down_result.stderr}"
+                    )
+            except Exception as cleanup_error:
+                print(f" -> Executor Cleanup Warning: {cleanup_error}")

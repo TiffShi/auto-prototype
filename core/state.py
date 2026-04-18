@@ -25,8 +25,7 @@ class AutoPrototypeState(TypedDict):
     bucket_needed: Optional[bool]   # Set by the data agent; False = skip MinIO entirely
 
     # The DevOps output
-    dockerfile_content: Optional[str]
-    startup_script_content: Optional[str]
+    infra_code: Optional[str]
 
     # The Debugger's workflow
     execution_logs: Optional[str]
