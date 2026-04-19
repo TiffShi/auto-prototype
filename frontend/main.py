@@ -1389,9 +1389,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 if __name__ == "__main__":
     import ctypes
     import sys
+    import os
+    from PyQt6.QtGui import QPalette, QColor, QIcon 
     # Make sure to import QIcon, QApplication etc. if they aren't already imported at the top
 
-    # 1. Force Windows/WSL taskbar to use a custom ID BEFORE QAplication is initialized
+    # 1. Force Wayland in WSL to allow dark Client-Side Decorations (CSD). 
+    # Fallback to xcb (X11) if Wayland isn't available.
+    if sys.platform.startswith("linux"):
+        os.environ["QT_QPA_PLATFORM"] = "wayland;xcb"
+        os.environ["GTK_THEME"] = "Adwaita:dark" # Extra hint for some Linux WMs
+
+    # 2. Force Windows/WSL taskbar to use a custom ID BEFORE QApplication is initialized
     try:
         # Create an even more distinct unique ID for your app
         myappid = 'architectai.agentic_ai_prototype_frontend.v1' 
@@ -1403,12 +1411,41 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle("Fusion") 
     
-    # 2. Set the global application icon using the NEW .ICO file
+    # 3. Set a global Dark Palette so the OS/Wayland knows to use dark window frames
+    palette = QPalette()
+    palette.setColor(QPalette.ColorRole.Window, QColor(13, 15, 18))
+    palette.setColor(QPalette.ColorRole.WindowText, QColor(200, 212, 232))
+    palette.setColor(QPalette.ColorRole.Base, QColor(18, 21, 26))
+    palette.setColor(QPalette.ColorRole.AlternateBase, QColor(13, 15, 18))
+    palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(13, 15, 18))
+    palette.setColor(QPalette.ColorRole.ToolTipText, QColor(200, 212, 232))
+    palette.setColor(QPalette.ColorRole.Text, QColor(200, 212, 232))
+    palette.setColor(QPalette.ColorRole.Button, QColor(30, 35, 48))
+    palette.setColor(QPalette.ColorRole.ButtonText, QColor(200, 212, 232))
+    palette.setColor(QPalette.ColorRole.BrightText, QColor(255, 0, 0))
+    palette.setColor(QPalette.ColorRole.Link, QColor(59, 130, 246))
+    palette.setColor(QPalette.ColorRole.Highlight, QColor(59, 130, 246))
+    palette.setColor(QPalette.ColorRole.HighlightedText, QColor(255, 255, 255))
+    app.setPalette(palette)
+    
+    # 4. Set the global application icon using the NEW .ICO file
     # Ensure get_resource_path is correctly defined and imported
     app_icon_path = get_resource_path("assets/logo.svg") 
     app_icon = QIcon(app_icon_path)
     app.setWindowIcon(app_icon)
 
     window = MainWindow()
+
+    # 5. Force Dark Title Bar on native Windows 10/11
+    # Must be done AFTER window = MainWindow() so the window ID exists
+    if sys.platform == "win32":
+        try:
+            # 20 is the DWMWA_USE_IMMERSIVE_DARK_MODE attribute
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                int(window.winId()), 20, ctypes.byref(ctypes.c_int(1)), 4
+            )
+        except Exception:
+            pass # Fails gracefully on older versions of Windows
+
     window.show()
     sys.exit(app.exec())
