@@ -2,6 +2,7 @@ import re
 from core.state import AutoPrototypeState
 from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
+from core.utils import safe_invoke
 
 def devops_agent_node(state: AutoPrototypeState) -> dict:
     print("DevOps Agent Active")
@@ -138,8 +139,8 @@ bucket_needed: {bucket_needed}
         ("human", human_prompt)
     ])
 
-    response = (prompt | llm).invoke({
-        "stack":            state.get("selected_stack_name", "Unknown"),
+    response = safe_invoke(prompt | llm, {
+        "stack":            state.get("selected_stack_name", "React/FastAPI"),
         "selected_db_name": state.get("selected_db_name", "PostgreSQL"),
         "plan":             state.get("architecture_plan", ""),
         "backend":          state.get("backend_code", "")[:5000],
@@ -149,7 +150,6 @@ bucket_needed: {bucket_needed}
         "bucket_needed":    bucket_needed,
         "bucket_section":   f"Bucket README:\n{bucket_readme}" if bucket_needed else ""
     })
-
     content = response.content
 
     print("DevOps Agent Finished")

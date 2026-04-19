@@ -964,7 +964,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             project_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', project_name)
 
         # --- BUILD THE PROJECT FOLDER ---
-        self.current_project_dir = os.path.join(base_dir, project_name)
+        self.current_project_dir = os.path.join(final_dir, project_name)
         
         # Collision handling: if they named it "MyApp" but "MyApp" already exists, append a random string
         if os.path.exists(self.current_project_dir):
@@ -1119,6 +1119,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.stopPrototypeButton.setEnabled(True) 
             
     def _on_launch_prototype(self):
+
+        try:
+            client = docker.from_env()
+            client.ping()
+        except Exception:
+            self._show_error_popup("Docker Error", "Could not connect to Docker.\n\nPlease ensure Docker is running before launching a prototype.")
+            return
+        
         # 1. Start the file picker in the user's saved output directory
         settings = QSettings("AutoPrototype", "AppSettings")
         base_dir = settings.value("output_directory", "").strip()

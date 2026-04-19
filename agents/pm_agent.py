@@ -2,6 +2,7 @@ import re
 from core.state import AutoPrototypeState
 from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
+from core.utils import safe_invoke
 
 def product_manager_node(state: AutoPrototypeState) -> dict:
     print("Product Manager Agent Active")
@@ -51,7 +52,7 @@ def product_manager_node(state: AutoPrototypeState) -> dict:
     ])
     
     # Run the LLM with the user's idea
-    response = (prompt | llm).invoke({"idea": state["user_idea"]})
+    response = safe_invoke(prompt | llm, {"idea": state["user_idea"]})
     content = response.content
     
     # Parse out the architecture choices

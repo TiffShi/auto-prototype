@@ -1,6 +1,7 @@
 from core.state import AutoPrototypeState
 from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
+from core.utils import safe_invoke
 
 # --- DEBUGGER AGENT ---
 def debugger_node(state: AutoPrototypeState) -> dict:
@@ -68,7 +69,7 @@ RUNTIME LOGS:
 {logs}""")
     ])
 
-    response = (prompt | llm).invoke({
+    response = safe_invoke(prompt | llm, {
         "plan": state["architecture_plan"],
         "backend": state.get("backend_code", ""),
         "frontend": state.get("frontend_code", ""),

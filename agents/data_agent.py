@@ -1,7 +1,7 @@
 from core.state import AutoPrototypeState
 from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
-from core.utils import apply_patches
+from core.utils import apply_patches, safe_invoke
 
 # --- DATA AGENT (Database + Object Storage) ---
 def data_agent_node(state: AutoPrototypeState) -> dict:
@@ -43,7 +43,7 @@ def data_agent_node(state: AutoPrototypeState) -> dict:
             ("human", human_prompt)
         ])
 
-        response = (prompt | llm).invoke({
+        response = safe_invoke(prompt | llm, {
             "previous_code": previous_code,
             "feedback": state["error_messages"][-1]
         })
@@ -73,20 +73,18 @@ def data_agent_node(state: AutoPrototypeState) -> dict:
             - If explicit IDs are inserted, they must remain consistent with the schema's key-generation strategy.
             - Prefer natural keys / unique business fields for idempotent inserts when possible.
             - The seed file must run successfully on a fresh database and must not break when re-applied in the normal dev workflow.
-        3. `database/init_db.py`
-           Standalone Python script that:
+         3. `database/init_db.*` (Extension matches backend language)
+           Standalone script written in the SAME language as the backend stack (e.g., .js for Node, .py for Python, .ts for Deno) that:
              a) Reads DATABASE_URL from the environment.
-             b) Connects to the DB.
+             b) Connects to the DB using the standard driver for that language.
              c) Runs schema.sql then seed.sql idempotently.
-           SQLite: use stdlib sqlite3. PostgreSQL: use psycopg2. Redis: use redis-py.
         4. `database/README.md`
            Which engine was chosen and why, the DATABASE_URL env var value, and the command to run
            the init script manually.
 
-        If PostgreSQL was chosen, also output:
-        5. `database/postgres_setup.sh`
-           Shell script to: init data dir, start postgres, createdb, run schema.sql and seed.sql.
-           Must run as root on Debian/Ubuntu inside a container.
+        If a standalone database container (like PostgreSQL, MySQL, or MongoDB) was chosen, also output:
+        5. `database/db_container_setup.sh`
+           Shell script to initialize the data dir, start the database engine, create the database, and run schema/seed files if applicable. Must run as root on Debian/Ubuntu inside a container
 
         PART 2 — OBJECT STORAGE (MinIO)
 
@@ -147,7 +145,7 @@ Backend Source Code (match ORM model names/columns/types exactly):
         db_name = state.get("selected_db_name", "PostgreSQL")
         bucket_req = state.get("bucket_needed", False)
 
-        response = (prompt | llm).invoke({
+        response = safe_invoke(prompt | llm, {
             "plan": state.get("architecture_plan", ""),
             "backend_code": state.get("backend_code", "No backend code available."),
             "selected_db_name": db_name,

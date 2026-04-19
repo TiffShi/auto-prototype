@@ -1,6 +1,22 @@
 import os
 import re
 from core.state import AutoPrototypeState
+import anthropic
+from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
+
+def _log_retry(retry_state):
+    """Logs the retry countdown to the UI via the stdout redirector."""
+    print(f"[SYSTEM] Claude API rate limit/timeout hit. Retrying in {retry_state.next_action.sleep:.1f} seconds...")
+
+@retry(
+    wait=wait_exponential(multiplier=2, min=5, max=60),
+    stop=stop_after_attempt(5),
+    retry=retry_if_exception_type((anthropic.RateLimitError, anthropic.APITimeoutError, anthropic.APIConnectionError)),
+    before_sleep=_log_retry
+)
+def safe_invoke(chain, params):
+    """Safely invokes a LangChain prompt|llm chain with exponential backoff."""
+    return chain.invoke(params)
 
 # --- DIFF UTILITY FUNCTION ---
 def apply_patches(original_code: str, patch_text: str) -> str:

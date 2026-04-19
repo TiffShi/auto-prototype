@@ -1,7 +1,7 @@
 from core.state import AutoPrototypeState
 from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
-from core.utils import apply_patches
+from core.utils import apply_patches, safe_invoke
 
 # --- FRONTEND AGENT ---
 def frontend_agent_node(state: AutoPrototypeState) -> dict:
@@ -45,7 +45,7 @@ def frontend_agent_node(state: AutoPrototypeState) -> dict:
             ("human", human_prompt)
         ])
         
-        response = (prompt | llm).invoke({
+        response = safe_invoke(prompt | llm, {
             "backend_code": state.get("backend_code", "No backend code available."),
             "previous_code": previous_code,
             "feedback": state["error_messages"][-1]
@@ -74,7 +74,7 @@ def frontend_agent_node(state: AutoPrototypeState) -> dict:
             ("human", human_prompt)
         ])
         
-        response = (prompt | llm).invoke({
+        response = safe_invoke(prompt | llm, {
             "plan": state.get('architecture_plan', ''),
             "backend_code": state.get("backend_code", "No backend code available.")
         })
