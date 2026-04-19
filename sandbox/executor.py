@@ -1,16 +1,16 @@
 # sandbox/executor.py
-
+import sys
 import os
 import re
 import time
 import uuid
 import shutil
 import subprocess
-
+from core.utils import get_app_root
 
 class SandboxExecutor:
     def __init__(self):
-        self.project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.project_root = get_app_root()
         self.default_project_name = "autoprototype"
 
     def _get_target_dir(self, state: dict) -> str:

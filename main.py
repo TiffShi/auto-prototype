@@ -1,9 +1,11 @@
 from core.graph import create_graph
 from dotenv import load_dotenv
+from core.utils import get_app_root
 
 def run_autoprototype():
-    load_dotenv()
-    
+    env_path = os.path.join(get_app_root(), '.env')
+    load_dotenv(dotenv_path=env_path)
+
     # Initialize the LangGraph app
     app = create_graph()
     
@@ -20,7 +22,8 @@ def run_autoprototype():
     final_state = initial_state 
     
     # Open a debug file to write logs into so we don't flood the terminal
-    with open("debug_log.txt", "w", encoding="utf-8") as log_file:
+    log_path = os.path.join(get_app_root(), "debug_log.txt")
+    with open(log_path, "w", encoding="utf-8") as log_file:
         log_file.write("=== AUTOPROTOTYPE DEBUG LOG ===\n")
         
         # Use .stream() instead of .invoke() to watch the workflow step-by-step

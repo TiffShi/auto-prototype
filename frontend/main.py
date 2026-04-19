@@ -8,6 +8,7 @@ import webbrowser
 import subprocess
 from docker.errors import NotFound, APIError
 from datetime import datetime
+from core.utils import get_app_root
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
@@ -196,7 +197,8 @@ class PipelineWorker(QThread):
         self.project_dir = project_dir
 
     def run(self):
-        load_dotenv()
+        env_path = os.path.join(get_app_root(), '.env')
+        load_dotenv(dotenv_path=env_path)
         
         stdout_redirector = EmittingStream()
         stdout_redirector.textWritten.connect(self.log_line.emit)
@@ -928,7 +930,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             return
 
         # 2. Check for API Key
-        load_dotenv()
+        env_path = os.path.join(get_app_root(), '.env')
+        load_dotenv(dotenv_path=env_path)
         if not os.getenv("ANTHROPIC_API_KEY"):
             self._show_error_popup("Missing API Key", "Your Anthropic API key is not configured.\n\nPlease open 'Settings > Preferences...' to add your key.")
             return
@@ -1410,7 +1413,7 @@ if __name__ == "__main__":
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion") 
-    
+
     # 3. Set a global Dark Palette so the OS/Wayland knows to use dark window frames
     palette = QPalette()
     palette.setColor(QPalette.ColorRole.Window, QColor(13, 15, 18))
@@ -1427,7 +1430,7 @@ if __name__ == "__main__":
     palette.setColor(QPalette.ColorRole.Highlight, QColor(59, 130, 246))
     palette.setColor(QPalette.ColorRole.HighlightedText, QColor(255, 255, 255))
     app.setPalette(palette)
-    
+
     # 4. Set the global application icon using the NEW .ICO file
     # Ensure get_resource_path is correctly defined and imported
     app_icon_path = get_resource_path("assets/logo.svg") 

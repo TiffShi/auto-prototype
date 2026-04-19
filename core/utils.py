@@ -1,8 +1,18 @@
 import os
 import re
+import sys
 from core.state import AutoPrototypeState
 import anthropic
 from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
+
+def get_app_root():
+    """Returns the true directory of the app, whether running as a script or an .exe"""
+    if getattr(sys, 'frozen', False):
+        # Running as a compiled executable (return the folder containing the .exe)
+        return os.path.dirname(sys.executable)
+    else:
+        # Running as a standard python script
+        return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def _log_retry(retry_state):
     """Logs the retry countdown to the UI via the stdout redirector."""
@@ -42,7 +52,7 @@ def write_files_to_disk(state: AutoPrototypeState):
     them to the dynamic output directory selected by the user."""
     
     # 1. Grab the dynamic path from the UI! Fallback to local folder if missing.
-    base_dir = state.get("project_dir", os.path.join(os.getcwd(),"output_prototype"))
+    base_dir = state.get("project_dir", os.path.join(get_app_root(), "output_prototype"))
 
     def parse_and_write(content: str):
         pattern = r"###\s+`?([\w\./_-]+\.\w+)`?\s+```\w*\n(.*?)```"
