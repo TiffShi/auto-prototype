@@ -13,12 +13,12 @@ def file_saver_node(state: AutoPrototypeState) -> dict:
     
     # Files are already written by execution_node, just save the metadata
     if state.get("architecture_plan"):
-        with open(os.path.join(base_dir, "architecture_plan.md"), "w") as f:
+        with open(os.path.join(base_dir, "architecture_plan.md"), "w", encoding="utf-8") as f:
             f.write(state["architecture_plan"])
             
     if state.get("error_messages"):
         print("WARNING: Unresolved bugs remain. Writing bug report.")
-        with open(os.path.join(base_dir, "unresolved_bugs.md"), "w") as f:
+        with open(os.path.join(base_dir, "unresolved_bugs.md"), "w", encoding="utf-8") as f:
             f.write("# Unresolved Bugs Report\n\n")
             f.write(f"## Final QA Feedback:\n{state['error_messages'][-1]}\n")
             

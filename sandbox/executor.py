@@ -33,6 +33,8 @@ class SandboxExecutor:
                     ["docker", "compose", "version"],
                     capture_output=True,
                     text=True,
+                    encoding='utf-8',
+                    errors='replace',
                     timeout=15
                 )
                 if result.returncode == 0:
@@ -123,6 +125,8 @@ class SandboxExecutor:
             cwd=cwd,
             capture_output=True,
             text=True,
+            encoding='utf-8',
+            errors='replace',
             timeout=timeout
         )
 

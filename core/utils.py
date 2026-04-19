@@ -63,7 +63,7 @@ def write_files_to_disk(state: AutoPrototypeState):
             full_path = os.path.join(base_dir, clean_path)
             
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
-            with open(full_path, "w") as f:
+            with open(full_path, "w", encoding="utf-8") as f:
                 f.write(code.strip())
 
     if state.get("backend_code"):

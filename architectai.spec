@@ -3,13 +3,14 @@
 block_cipher = None
 
 a = Analysis(
-    ['frontend/ui_architectai.py'],  # The main entry point for your PyQt6 UI
-    pathex=[],
+    ['frontend/main.py'],  # The main entry point for your PyQt6 UI
+    pathex=['.'],
     binaries=[],
     datas=[
         ('agents', 'agents'),        # Include the agents folder
         ('core', 'core'),            # Include the core folder
         ('sandbox', 'sandbox'),      # Include the sandbox folder
+        ('frontend/assets', 'assets'),
     ],
     hiddenimports=[
         'langgraph',
@@ -48,6 +49,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon='frontend/assets/logo.ico'
 )
 
 coll = COLLECT(

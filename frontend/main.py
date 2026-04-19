@@ -8,12 +8,13 @@ import webbrowser
 import subprocess
 from docker.errors import NotFound, APIError
 from datetime import datetime
-from core.utils import get_app_root
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:
     sys.path.append(parent_dir)
+
+from core.utils import get_app_root
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QListWidgetItem,
@@ -159,7 +160,9 @@ class StopperWorker(QThread):
                     cwd=project_dir,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
-                    text=True
+                    text=True,
+                    encoding='utf-8',    # <-- Tell Windows to expect modern characters
+                    errors='replace'     # <-- If it hits an impossible character, swap it for a '?' instead of crashing
                 )
                 
                 if process.returncode == 0:
@@ -351,7 +354,7 @@ class AgentItemWidget(QWidget):
         self.glow_effect = QGraphicsDropShadowEffect(self)
         self.glow_effect.setOffset(0, 0) # Centering it makes it a "glow" instead of a shadow
         self.glow_effect.setColor(QColor(0, 0, 0, 0)) # Start fully transparent
-        self.glow_effect.setBlurRadius(0)
+        self.glow_effect.setBlurRadius(12)
         self.dot.setGraphicsEffect(self.glow_effect)
         
         layout.addWidget(self.icon_label)
@@ -360,32 +363,17 @@ class AgentItemWidget(QWidget):
         layout.addWidget(self.dot)
         
         self.anim = QVariantAnimation(self)
-        self.anim.setDuration(800) 
-        self.anim.setStartValue(QColor("#F4FF5E")) 
-        self.anim.setEndValue(QColor("#F0F5A6"))   
+        self.anim.setDuration(1500) 
+        # Start at Bright Yellow, 100% opaque (255)
+        self.anim.setStartValue(QColor(244, 255, 94, 255)) 
+        # End at Bright Yellow, nearly invisible (30)
+        self.anim.setEndValue(QColor(244, 255, 94, 30))
         self.anim.setLoopCount(-1) 
         self.anim.valueChanged.connect(self._on_color_pulse) # Renamed method
 
-        # --- NEW: Spread (blur radius) animation ---
-        self.blur_anim = QVariantAnimation(self)
-        self.blur_anim.setDuration(800)
-        self.blur_anim.setStartValue(6.0)  # Tight glow
-        self.blur_anim.setEndValue(20.0)   # Spread out glow
-        self.blur_anim.setLoopCount(-1)
-        self.blur_anim.valueChanged.connect(self._on_blur_pulse)
-
     def _on_color_pulse(self, color):
-        """Updates the dot color and the glow color."""
-        self.dot.setStyleSheet(f"color: {color.name()}; font-size: 16px;")
-        
-        # Match the glow color to the dot, but make it slightly transparent
-        glow_color = QColor(color)
-        glow_color.setAlpha(180) # 0-255 scale (180 provides a nice soft light)
-        self.glow_effect.setColor(glow_color)
-
-    def _on_blur_pulse(self, radius):
-        """Updates how far the glow spreads out."""
-        self.glow_effect.setBlurRadius(radius)
+        """Only pulses the shadow's transparency."""
+        self.glow_effect.setColor(color)
 
     def set_status(self, status):
         if status == "running":
@@ -408,23 +396,20 @@ class AgentItemWidget(QWidget):
         # --- UPDATED: Animation and dot logic ---
         if status == "idle":
             self.anim.stop()
-            self.blur_anim.stop()
             self.dot.setStyleSheet("color: #5a6a82; font-size: 16px;") 
             self.glow_effect.setColor(QColor(0, 0, 0, 0)) # Turn off glow
-            
+
         elif status == "running":
-            self.anim.start() 
-            self.blur_anim.start()
-            
+            self.dot.setStyleSheet("color: #F4FF5E; font-size: 16px;")
+            self.anim.start()
+
         elif status == "done":
             self.anim.stop()
-            self.blur_anim.stop()
             self.dot.setStyleSheet("color: #22c55e; font-size: 16px;") 
             self.glow_effect.setColor(QColor(0, 0, 0, 0)) # Turn off glow
             
         elif status == "error":
             self.anim.stop()
-            self.blur_anim.stop()
             self.dot.setStyleSheet("color: #ef4444; font-size: 16px;") 
             self.glow_effect.setColor(QColor(0, 0, 0, 0)) # Turn off glow
 
@@ -452,30 +437,30 @@ class DockerMonitorWorker(QThread):
                 continue
 
             try:
-                # 1. RELAX THE FILTER: Look for the Compose label instead of a specific name
-                containers = self.client.containers.list(
-                    all=True, 
-                    filters={"name": "autoprototype-"}
-                )
+                # 1. Fetch ALL containers (remove the strict name filter)
+                containers = self.client.containers.list(all=True)
                 
                 update_data = []
                 for c in containers:
-                    # 2. CLEANER NAMES: Look for compose labels to format the UI nicely
+                    # 2. Look at the Docker Compose labels instead of the raw name
                     labels = c.attrs.get('Config', {}).get('Labels', {})
+                    compose_project = labels.get('com.docker.compose.project', '').lower()
+
+                    # 3. If it's not one of our generated projects, skip it
+                    if 'autoprototype' not in compose_project:
+                        continue
+
                     compose_service = labels.get('com.docker.compose.service', '')
 
-                    # Since the project name is now 'autoprototype-itemtracker', 
-                    # let's clean it up for the UI to just show 'itemtracker [backend]'
-                    raw_project = labels.get('com.docker.compose.project', '')
-                    clean_project = raw_project.replace('autoprototype-', '')
+                    # Clean up the project name for the UI display
+                    clean_project = compose_project.replace('autoprototype-', '').replace('autoprototype_', '').replace('autoprototype', '')
                     
                     if clean_project and compose_service:
-                        # e.g., "autoprototype_xyz [frontend]"
                         display_name = f"{clean_project} [{compose_service}]"
                     else:
                         display_name = c.name
 
-                    # 3. PORT EXTRACTION (Remains the same)
+                    # 4. Port Extraction
                     ports = []
                     port_data = c.attrs.get('NetworkSettings', {}).get('Ports', {})
                     if port_data:
@@ -486,8 +471,8 @@ class DockerMonitorWorker(QThread):
                     port_str = ", ".join(ports) if ports else "--"
                     
                     update_data.append({
-                        "name": display_name,         # Pass the cleaned-up name to the UI
-                        "raw_name": c.name,           # (Optional) Keep raw name just in case
+                        "name": display_name,
+                        "raw_name": c.name,
                         "status": c.status,
                         "ports": port_str
                     })
@@ -496,7 +481,7 @@ class DockerMonitorWorker(QThread):
             except Exception:
                 self.client = None 
             
-            self.sleep(1) 
+            self.sleep(1)
 
     def stop(self):
         self._is_running = False
@@ -701,25 +686,21 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self._connect_signals()
         self._start_docker_monitor()
 
+        self.liveBadge.setFixedSize(65, 18) 
+        self.liveBadge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
         self.badge_glow = QGraphicsDropShadowEffect(self)
         self.badge_glow.setOffset(0, 0)
         self.badge_glow.setColor(QColor(0, 0, 0, 0)) # Start transparent
-        self.badge_glow.setBlurRadius(0)
+        self.badge_glow.setBlurRadius(15)
         self.liveBadge.setGraphicsEffect(self.badge_glow)
 
         self.badge_anim = QVariantAnimation(self)
-        self.badge_anim.setDuration(800)
+        self.badge_anim.setDuration(1500)
         self.badge_anim.setStartValue(QColor("#F4FF5E"))
         self.badge_anim.setEndValue(QColor("#F0F5A6"))
         self.badge_anim.setLoopCount(-1)
         self.badge_anim.valueChanged.connect(self._on_badge_pulse)
-
-        self.badge_blur_anim = QVariantAnimation(self)
-        self.badge_blur_anim.setDuration(800)
-        self.badge_blur_anim.setStartValue(6.0)
-        self.badge_blur_anim.setEndValue(20.0)
-        self.badge_blur_anim.setLoopCount(-1)
-        self.badge_blur_anim.valueChanged.connect(self._on_badge_blur)
 
         self.set_badge_state("IDLE")
 
@@ -817,17 +798,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def _on_badge_pulse(self, color):
         """Pulses the text color and the shadow color of the live badge."""
-        self.liveBadge.setStyleSheet(
-            f"background-color: {self.badge_bg_color}; color: {color.name()}; border-radius:3px;"
-            "font-size:9px; padding:1px 6px; letter-spacing:1px;"
-        )
-        glow_color = QColor(color)
-        glow_color.setAlpha(180) 
-        self.badge_glow.setColor(glow_color)
-
-    def _on_badge_blur(self, radius):
-        """Pulses the radius of the live badge glow."""
-        self.badge_glow.setBlurRadius(radius)
+        self.badge_glow.setColor(color)
 
     def _handle_docker_update(self, active_containers: list):
         self.dockerTable.setRowCount(len(active_containers))
@@ -1056,31 +1027,44 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def _on_stop_prototype(self):
         try:
             client = docker.from_env()
-            # SECURE FILTER: Only list containers in the dropdown that have our safe prefix
-            containers = client.containers.list(filters={"name": "autoprototype-"})        
+            all_containers = client.containers.list()
+            
+            # Dictionary to map clean project names to ONE container name
+            unique_projects = {}
+            
+            for c in all_containers:
+                labels = c.attrs.get('Config', {}).get('Labels', {})
+                raw_project = labels.get('com.docker.compose.project', '')
+                
+                if 'autoprototype' in raw_project.lower():
+                    # Clean up the project name for the UI
+                    clean_project = raw_project.replace('autoprototype-', '').replace('autoprototype_', '').replace('autoprototype', '')
+                    
+                    # Store only the first container we find for each project
+                    if clean_project and clean_project not in unique_projects:
+                        unique_projects[clean_project] = c.name
+                        
         except Exception:
             self._show_error_popup("Docker Error", "Could not connect to Docker.")
             return
 
-        if not containers:
+        if not unique_projects:
             self._show_error_popup("No Prototypes", "There are currently no live prototypes running.")
             return
 
-        # Get the names of the running containers
-        container_names = [c.name for c in containers]
-
-        # Use PyQt's built-in dropdown dialog
-        selected_name, ok = QInputDialog.getItem(
+        # Use PyQt's built-in dropdown dialog with the clean project names
+        project_display_names = list(unique_projects.keys())
+        selected_project, ok = QInputDialog.getItem(
             self, 
             "Stop Prototype", 
             "Select a running prototype to destroy:", 
-            container_names, 
+            project_display_names, 
             0, 
             False
         )
 
-        # If the user clicked "OK" and selected a container
-        if ok and selected_name:
+        # If the user clicked "OK" and selected a project
+        if ok and selected_project:
             self.stopPrototypeButton.setEnabled(False)
             self.stopPrototypeButton.setText(" STOPPING...")
             
@@ -1093,8 +1077,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             if not self.spinner_timer.isActive():
                 self.spinner_timer.start(30)
             
+            # Get the actual container name associated with this project to feed the worker
+            target_container_name = unique_projects[selected_project]
+
             # Spin up the background worker
-            self.stopper_worker = StopperWorker(selected_name)
+            self.stopper_worker = StopperWorker(target_container_name)
             self.stopper_worker.log_line.connect(self._append_log)
             self.stopper_worker.finished_stop.connect(self._on_stop_finished)
             self.stopper_worker.start()
@@ -1178,6 +1165,30 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         
         # Extract the project name from the selected directory path (e.g. "AutoPrototype_xyz")
         project_name = os.path.basename(target_dir)
+
+        # ---> NEW: POPULATE THE FILE TREE FOR THE LAUNCHED PROJECT <---
+        self.fileTree.clear()
+        
+        # Create the root folder node
+        root_item = QTreeWidgetItem(self.fileTree, [f"{project_name}/"])
+        root_item.setIcon(0, QIcon(get_resource_path("assets/closed_folder.svg")))
+        root_item.setExpanded(True)
+
+        # Walk through the folder and add files to the tree
+        for root_dir, dirs, files in os.walk(target_dir):
+            # Skip heavy or hidden folders so the UI doesn't freeze
+            if '.git' in root_dir or 'node_modules' in root_dir or '__pycache__' in root_dir:
+                continue
+                
+            for file in files:
+                full_path = os.path.join(root_dir, file)
+                rel_path = os.path.relpath(full_path, target_dir).replace("\\", "/")
+                self.add_file_to_tree(rel_path)
+
+        # Update the file count label
+        self.fileCountLabel.setText(
+            f"{self._count_files(self.fileTree.invisibleRootItem())} files"
+        )
 
         # 5. Initialize and start the Launcher Worker with the SELECTED directory
         self.launcher_worker = LauncherWorker(target_dir, project_name)
@@ -1296,43 +1307,51 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def set_badge_state(self, state: str):
         """Updates the live badge text, colors, and animations based on the state."""
-        # Stop animations while we change the colors
         self.badge_anim.stop()
-        self.badge_blur_anim.stop()
 
         if state == "IDLE":
             self.liveBadge.setText("● IDLE")
-            self.badge_bg_color = "#1e3a8a"               # Dark blue background
-            self.badge_anim.setStartValue(QColor("#3b82f6")) # Blue text
-            self.badge_anim.setEndValue(QColor("#93c5fd"))   # Lighter blue glow
+            self.badge_bg_color = "#1e3a8a"              
+            text_color = "#3b82f6"                           
+            self.badge_anim.setStartValue(QColor("#3b82f6")) 
+            self.badge_anim.setEndValue(QColor("#93c5fd"))   
 
         elif state == "RUNNING":
             self.liveBadge.setText("● RUNNING")
-            self.badge_bg_color = "#3f3f00"               # Dark yellow background
-            self.badge_anim.setStartValue(QColor("#facc15")) # Yellow text
-            self.badge_anim.setEndValue(QColor("#fef08a"))   # Lighter yellow glow
-
+            self.badge_bg_color = "#3f3f00"              
+            text_color = "#facc15"
+            # Start at Yellow, 100% opaque (255 alpha)
+            self.badge_anim.setStartValue(QColor(250, 204, 21, 255)) 
+            # End at Yellow, mostly transparent (40 alpha)
+            self.badge_anim.setEndValue(QColor(250, 204, 21, 40))
         elif state == "SUCCESS":
             self.liveBadge.setText("● SUCCESS")
-            self.badge_bg_color = "#166534"               # Dark green background
-            self.badge_anim.setStartValue(QColor("#22c55e")) # Green text
-            self.badge_anim.setEndValue(QColor("#86efac"))   # Lighter green glow
+            self.badge_bg_color = "#166534"              
+            text_color = "#22c55e"
+            self.badge_anim.setStartValue(QColor("#22c55e")) 
+            self.badge_anim.setEndValue(QColor("#86efac"))  
 
         elif state == "WARNING":
             self.liveBadge.setText("● WARNING")
-            self.badge_bg_color = "#713f12"               # Dark orange background
-            self.badge_anim.setStartValue(QColor("#eab308")) # Orange text
-            self.badge_anim.setEndValue(QColor("#fde047"))   # Lighter orange glow
+            self.badge_bg_color = "#713f12"              
+            text_color = "#eab308"
+            self.badge_anim.setStartValue(QColor("#eab308")) 
+            self.badge_anim.setEndValue(QColor("#fde047"))   
 
         elif state == "STOPPED":
             self.liveBadge.setText("● STOPPED")
-            self.badge_bg_color = "#450a0a"               # Dark red background
-            self.badge_anim.setStartValue(QColor("#ef4444")) # Red text
-            self.badge_anim.setEndValue(QColor("#fca5a5"))   # Lighter red glow
+            self.badge_bg_color = "#450a0a"              
+            text_color = "#ef4444"
+            self.badge_anim.setStartValue(QColor("#ef4444")) 
+            self.badge_anim.setEndValue(QColor("#fca5a5"))   
 
-        # Restart animations with the newly configured colors
+        # Apply the CSS exactly ONCE per state change to stop the shaking
+        self.liveBadge.setStyleSheet(
+            f"background-color: {self.badge_bg_color}; color: {text_color}; border-radius:3px;"
+            "font-size:9px; padding:1px 6px; letter-spacing:1px;"
+        )
+
         self.badge_anim.start()
-        self.badge_blur_anim.start()
 
     def add_file_to_tree(self, path: str):
         parts = path.split("/")
@@ -1433,7 +1452,7 @@ if __name__ == "__main__":
 
     # 4. Set the global application icon using the NEW .ICO file
     # Ensure get_resource_path is correctly defined and imported
-    app_icon_path = get_resource_path("assets/logo.svg") 
+    app_icon_path = get_resource_path("assets/logo.ico") 
     app_icon = QIcon(app_icon_path)
     app.setWindowIcon(app_icon)
 
