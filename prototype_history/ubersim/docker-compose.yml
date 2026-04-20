@@ -1,0 +1,43 @@
+version: "3.9"
+
+services:
+  database:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: rideshare
+      POSTGRES_USER: rideshare_user
+      POSTGRES_PASSWORD: rideshare_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/1-schema.sql
+      - ./database/seed.sql:/docker-entrypoint-initdb.d/2-seed.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rideshare_user -d rideshare"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://rideshare_user:rideshare_pass@database:5432/rideshare
+      APP_HOST: "0.0.0.0"
+      APP_PORT: "8080"
+      FRONTEND_ORIGIN: "http://localhost:5173"
+    depends_on:
+      database:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  pg_data:

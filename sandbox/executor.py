@@ -1,16 +1,20 @@
-# sandbox/executor.py
-
+import sys
 import os
 import re
 import time
 import uuid
 import shutil
 import subprocess
-
+from core.utils import get_app_root
 
 class SandboxExecutor:
+    """
+    Manages the execution and teardown of Docker Compose environments.
+    Responsible for writing generated code to disk, orchestrating containers, 
+    and extracting isolated runtime logs for the QA Debugger.
+    """
     def __init__(self):
-        self.project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.project_root = get_app_root()
         self.default_project_name = "autoprototype"
 
     def _get_target_dir(self, state: dict) -> str:
@@ -24,16 +28,24 @@ class SandboxExecutor:
 
     def _docker_compose_cmd(self):
         """
-        Prefer 'docker compose', but allow fallback to legacy 'docker-compose'.
+        Detects the available Docker Compose executable.
+        Prefers 'docker compose', but allow fallback to legacy 'docker-compose'.
         Returns a list suitable for subprocess, e.g. ['docker', 'compose'].
         """
         if shutil.which("docker"):
             try:
+                kwargs = {}
+                if sys.platform == "win32":
+                    kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+
                 result = subprocess.run(
                     ["docker", "compose", "version"],
                     capture_output=True,
                     text=True,
-                    timeout=15
+                    encoding='utf-8',
+                    errors='replace',
+                    timeout=15,
+                    **kwargs
                 )
                 if result.returncode == 0:
                     return ["docker", "compose"]
@@ -67,6 +79,7 @@ class SandboxExecutor:
         if not content:
             return
 
+        # Matches the filepath header (Group 1) and the raw code payload (Group 2)
         pattern = r"###\s+`?([\w\./_-]+(?:\.\w+)?)`?\s+```[\w-]*\n(.*?)```"
         blocks = re.findall(pattern, content, re.DOTALL)
 
@@ -83,6 +96,8 @@ class SandboxExecutor:
     def _write_infra_files(self, state: dict):
         """
         Writes infrastructure files for the generated prototype.
+        Prioritizes the modern multi-file output (infra_code) while maintaining 
+        backward compatibility with older single-container payloads.
 
         Preferred new format:
         - state['infra_code'] contains ### file blocks
@@ -118,12 +133,20 @@ class SandboxExecutor:
         )
 
     def _run_subprocess(self, cmd, cwd, timeout=300):
+        kwargs = {}
+        # Prevent Windows from popping open a terminal window for the Docker subprocess
+        if sys.platform == "win32":
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+
         return subprocess.run(
             cmd,
             cwd=cwd,
             capture_output=True,
             text=True,
-            timeout=timeout
+            encoding='utf-8',
+            errors='replace',
+            timeout=timeout,
+            **kwargs
         )
 
     def _collect_compose_logs(self, compose_cmd, project_name: str, target_dir: str) -> str:
@@ -203,14 +226,7 @@ class SandboxExecutor:
         )
 
     def run_prototype(self):
-        """
-        Compose-first live runner.
-        Starts services detached and prints expected localhost URLs.
-
-        NOTE:
-        Because Compose project names are unique, stopping later requires the same name.
-        For now this is mostly a convenience method.
-        """
+        """Detached launcher for manually testing a successfully generated application."""
         target_dir = os.path.join(self.project_root, "frontend/output_prototype")
 
         if not self._compose_file_exists(target_dir):
@@ -282,6 +298,7 @@ class SandboxExecutor:
                     f"STDERR:\n{up_result.stderr}"
                 )
 
+            # Wait period allows initialization scripts to fail and throw stack traces
             print(" -> Executor: Compose services started. Waiting 12 seconds for startup...")
             time.sleep(12)
 
@@ -295,6 +312,7 @@ class SandboxExecutor:
         except Exception as e:
             return f"EXECUTION FAILED:\n{str(e)}"
         finally:
+            # Absolute teardown to prevent orphaned containers and ghost ports
             try:
                 down_result = self._run_subprocess(
                     compose_cmd + ["-p", project_name, "down", "-v", "--remove-orphans"],

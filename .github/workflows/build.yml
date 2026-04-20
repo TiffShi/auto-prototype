@@ -1,0 +1,87 @@
+name: Build and Release ArchitectAI
+on:
+  push:
+    tags:
+      - 'v*' # This triggers the build when you push a tag like v1.0.0
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          
+      - name: Install Dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
+          
+      - name: Build with PyInstaller
+        run: pyinstaller architectai.spec --clean
+
+      # Windows Installer (Inno Setup)
+      - name: Build Windows Installer
+        if: matrix.os == 'windows-latest'
+        run: iscc installer.iss
+
+      # Mac Installer (.dmg)
+      - name: Build Mac DMG
+        if: matrix.os == 'macos-latest'
+        run: |
+          npm install -g create-dmg
+          # create-dmg packages the .app into a beautiful disk image
+          create-dmg dist/ArchitectAI.app || true
+          mkdir -p dist/installer
+          mv *.dmg dist/installer/ArchitectAI_Mac.dmg
+        shell: bash
+
+      # Linux Installer (.deb for Ubuntu/Debian)
+      - name: Build Linux DEB
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          # Build the Debian package folder structure
+          mkdir -p build_deb/opt/ArchitectAI
+          mkdir -p build_deb/usr/bin
+          mkdir -p build_deb/DEBIAN
+          
+          # Copy your app files into the Linux "opt" directory
+          cp -r dist/ArchitectAI/* build_deb/opt/ArchitectAI/
+          
+          # Create a symlink so users can type 'architectai' in terminal
+          ln -s /opt/ArchitectAI/ArchitectAI build_deb/usr/bin/architectai
+          
+          # Create the Debian control file (the installer metadata)
+          echo "Package: architectai" > build_deb/DEBIAN/control
+          echo "Version: 1.0.2" >> build_deb/DEBIAN/control
+          echo "Architecture: amd64" >> build_deb/DEBIAN/control
+          echo "Maintainer: Your Name <your.email@example.com>" >> build_deb/DEBIAN/control
+          echo "Description: Agentic AI Prototype Builder" >> build_deb/DEBIAN/control
+          
+          # Compile the .deb file
+          dpkg-deb --build build_deb
+          mkdir -p dist/installer
+          mv build_deb.deb dist/installer/ArchitectAI_Linux.deb
+        shell: bash
+
+      # --- UPLOAD ALL THREE INSTALLERS ---
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/installer/ArchitectAI_Windows_Setup.exe
+            dist/installer/ArchitectAI_Mac.dmg
+            dist/installer/ArchitectAI_Linux.deb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -10,30 +10,39 @@ from agents.system_nodes import execution_node, file_saver_node
 
 # --- ROUTER FUNCTION ---
 def route_after_debugger(state: AutoPrototypeState):
-    """Decides where to go next based on the debugger's findings."""
+    """
+    Determines the next node in the graph based on QA evaluation.
+    Routes back to the backend agent if bugs are found, or forwards to the saver 
+    if the prototype passes or the maximum retry limit is reached.
+    """
     MAX_ITERATIONS = 3
 
-    # 1. If QA passed (error list was cleared)
+    # If QA passed (error list was cleared)
     if not state.get("error_messages"):
         print("Router: QA Passed. Proceeding to save.")
         return "saver"
 
-    # 2. If QA failed but we hit the retry limit
+    # If QA failed but we hit the retry limit
     if state.get("iteration_count", 0) >= MAX_ITERATIONS:
         print(f"Router: Max iterations ({MAX_ITERATIONS}) reached. Forcing save with known bugs.")
         return "saver"
 
-    # 3. If QA failed and we still have retries left
+    # If QA failed and we still have retries left
     print("Router: Bugs found. Sending feedback back to Backend Developer.")
     return "backend"
 
 def create_graph():
+    """
+    Compiles the LangGraph state machine orchestrating the AI development pipeline.
+    Defines the sequential flow from PM to DevOps, followed by the execution/QA loop.
+    """
+
     workflow = StateGraph(AutoPrototypeState)
 
     workflow.add_node("pm",       product_manager_node)
     workflow.add_node("backend",  backend_agent_node)
     workflow.add_node("frontend", frontend_agent_node)
-    workflow.add_node("data",     data_agent_node)      # NEW: replaces separate db + bucket agents
+    workflow.add_node("data",     data_agent_node)
     workflow.add_node("devops",   devops_agent_node)
     workflow.add_node("executor", execution_node)
     workflow.add_node("debugger", debugger_node)
@@ -43,12 +52,12 @@ def create_graph():
     workflow.set_entry_point("pm")
     workflow.add_edge("pm",       "backend")
     workflow.add_edge("backend",  "frontend")
-    workflow.add_edge("frontend", "data")       # data reads backend code + architecture plan
-    workflow.add_edge("data",     "devops")     # devops reads data_code + bucket_needed flag
+    workflow.add_edge("frontend", "data")
+    workflow.add_edge("data",     "devops")
     workflow.add_edge("devops",   "executor")
     workflow.add_edge("executor", "debugger")
 
-    # Conditional loop: debugger routes back to backend for fixes, or forward to save
+    # QA loop: debugger routes back to backend for fixes, or forward to save
     workflow.add_conditional_edges(
         "debugger",
         route_after_debugger,

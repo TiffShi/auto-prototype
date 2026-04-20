@@ -14,6 +14,8 @@ parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:
     sys.path.append(parent_dir)
 
+from core.utils import get_app_root
+
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QListWidgetItem,
     QTreeWidgetItem, QTableWidgetItem, QHeaderView, QWidget, QHBoxLayout, QVBoxLayout, QLabel, 
@@ -24,9 +26,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, QVariantAnimation, QObject, QTimer, QSettings
 from PyQt6.QtGui import QColor, QTextCharFormat, QTextCursor, QTextBlockFormat, QIcon, QFont, QFontMetrics, QPixmap, QPainter
 
-# 1. Import the generated UI class
+# the generated UI class
 from ui_architectai import Ui_MainWindow
-
 from core.graph import create_graph
 from core import graph as graph_module  
 from dotenv import load_dotenv
@@ -42,7 +43,8 @@ def get_resource_path(relative_path):
 
     return os.path.join(base_path, relative_path).replace("\\", "/") # PyQt urls prefer forward slashes
     
-# --- CONSOLIDATED AGENTS & METADATA ---
+# --- UI AGENT METADATA ---
+# Maps LangGraph node names to UI rendering properties (colors, icons, progress milestones)
 AGENTS = {
     "pm":       {"index": 0,    "log_name": "[PM]","name": "Program Manager", "role": "ORCHESTRATOR",   "color": "#3b82f6", "icon_file": "pm_icon.svg", "progress": 10},
     "backend":  {"index": 1,    "log_name": "[BACKEND]","name": "Backend", "role": "API / SERVICES", "color": "#a855f7", "icon_file": "backend_icon.svg", "progress": 25},
@@ -56,6 +58,10 @@ AGENTS = {
 
 # --- STDOUT REDIRECTOR ---
 class EmittingStream(QObject):
+    """
+    Intercepts stdout (print statements) from the backend LangChain processes 
+    and emits them as PyQt signals to safely update the GUI thread.
+    """
     textWritten = pyqtSignal(str, str, str) # tag, message, color
 
     def __init__(self):
@@ -72,6 +78,7 @@ class EmittingStream(QObject):
 
 
 class LauncherWorker(QThread):
+    """Background worker for spinning up Docker Compose environments."""
     log_line = pyqtSignal(str, str, str)  # agent, message, color
     finished_launch = pyqtSignal(bool)
 
@@ -83,18 +90,23 @@ class LauncherWorker(QThread):
     def run(self):
         try:
             self.log_line.emit("[SYSTEM]", f"Spinning up Docker Compose for '{self.project_name}'...", "#3b82f6")
-
             safe_project_name = f"autoprototype-{self.project_name}"
+
+            # Prevent Windows terminal popup
+            kwargs = {}
+            if sys.platform == "win32":
+                kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
 
             # Run docker compose up --build -d in the project directory
             process = subprocess.Popen(
                 ["docker", "compose", "-p", safe_project_name, "up", "--build", "-d"],
                 cwd=self.project_dir,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,  # Merge stderr into stdout
+                stderr=subprocess.STDOUT,
                 text=True,
                 encoding='utf-8',
-                errors='replace'
+                errors='replace',
+                **kwargs
             )
 
             # Stream the output live to your UI logs!
@@ -122,6 +134,7 @@ class LauncherWorker(QThread):
             self.finished_launch.emit(False)
 
 class StopperWorker(QThread):
+    """Background worker to safely tear down running Docker Compose stacks."""
     log_line = pyqtSignal(str, str, str)
     finished_stop = pyqtSignal(bool)
 
@@ -151,14 +164,22 @@ class StopperWorker(QThread):
 
             if project_dir and compose_project and os.path.exists(project_dir):
                 self.log_line.emit("[DEVOPS]", f"Running compose down for '{compose_project}'...", "#0ea5e9")
-                
+
+                # Prevent Windows terminal popup
+                kwargs = {}
+                if sys.platform == "win32":
+                    kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+
                 # -> PASS THE -p FLAG TO DESTROY <-
                 process = subprocess.run(
                     ["docker", "compose", "-p", compose_project, "down"], 
                     cwd=project_dir,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
-                    text=True
+                    text=True,
+                    encoding='utf-8',    # <-- Tell Windows to expect modern characters
+                    errors='replace',    # <-- If it hits an impossible character, swap it for a '?' instead of crashing
+                    **kwargs
                 )
                 
                 if process.returncode == 0:
@@ -168,6 +189,7 @@ class StopperWorker(QThread):
                     self.log_line.emit("[SYSTEM]", f"Docker Compose down failed:\n{process.stdout}", "#ef4444")
                     self.finished_stop.emit(False)
             else:
+                # Fallback: Force kill the container if the compose context is lost
                 self.log_line.emit("[SYSTEM]", "Compose directory not found. Forcing container removal...", "#eab308")
                 container.stop(timeout=5) 
                 container.remove(force=True)
@@ -182,6 +204,10 @@ class StopperWorker(QThread):
             self.finished_stop.emit(False)
 
 class PipelineWorker(QThread):
+    """
+    Core orchestrator thread. Runs the LangGraph AI pipeline while 
+    streaming updates (logs, file tree changes, progress) back to the main UI.
+    """
     log_line = pyqtSignal(str, str, str)  
     progress = pyqtSignal(int)            
     agent_status = pyqtSignal(int, str)   
@@ -196,15 +222,18 @@ class PipelineWorker(QThread):
         self.project_dir = project_dir
 
     def run(self):
-        load_dotenv()
-        
+        env_path = os.path.join(get_app_root(), '.env')
+        load_dotenv(dotenv_path=env_path)
+
+        # Intercept print statements globally for this thread
         stdout_redirector = EmittingStream()
         stdout_redirector.textWritten.connect(self.log_line.emit)
         sys.stdout = stdout_redirector
 
         try:
             app = create_graph()
-            
+    
+            # Map standard linear edge transitions for UI prediction
             linear_edges = {}
             try:
                 for edge in app.get_graph().edges:
@@ -222,7 +251,8 @@ class PipelineWorker(QThread):
             }
 
             output_dir = self.project_dir
-            
+    
+            # Identify and prime the UI for the first node
             first_node = next((edge.target for edge in app.get_graph().edges if edge.source == "__start__"), "pm")
             if first_node in AGENTS:
                 stdout_redirector.current_tag = AGENTS[first_node]["log_name"]
@@ -230,6 +260,7 @@ class PipelineWorker(QThread):
                 if AGENTS[first_node].get("index") is not None:
                     self.agent_status.emit(AGENTS[first_node]["index"], "running")
 
+            # Main LangGraph streaming loop
             for event in app.stream(state):
                 if not self._is_running:
                     stdout_redirector.current_tag = "[SYSTEM]"
@@ -248,12 +279,14 @@ class PipelineWorker(QThread):
                     if meta.get("progress"):
                         self.progress.emit(meta["progress"])
 
+                    # Determine next node to update UI colors/tags
                     possible_next_nodes = linear_edges.get(node_name, [])
                     next_node = None
                     
                     if len(possible_next_nodes) == 1:
                         next_node = possible_next_nodes[0]
                     elif len(possible_next_nodes) > 1:
+                        # Dynamically resolve conditional router functions to predict UI state
                         router_func_name = f"route_after_{node_name}"
                         if hasattr(graph_module, router_func_name):
                             router = getattr(graph_module, router_func_name)
@@ -264,7 +297,8 @@ class PipelineWorker(QThread):
                         
                         stdout_redirector.current_tag = AGENTS[next_node]["log_name"]
                         stdout_redirector.current_color = AGENTS[next_node]["color"]
-                        
+
+                        # Loop detection: Reset downstream UI elements if debugger routes back to backend
                         if next_idx is not None and curr_idx is not None and next_idx < curr_idx:
                             for agent_meta in AGENTS.values():
                                 idx = agent_meta.get("index")
@@ -278,6 +312,7 @@ class PipelineWorker(QThread):
                         if next_idx is not None:
                             self.agent_status.emit(next_idx, "running")
 
+                    # Live File Tracker: Scan output directory for newly generated files
                     if os.path.exists(output_dir):
                         for root, dirs, files in os.walk(output_dir):
                             for file in files:
@@ -302,6 +337,7 @@ class PipelineWorker(QThread):
         self._is_running = False
 
 class AgentItemWidget(QWidget):
+    """Custom sidebar widget representing an AI agent's execution state."""
     def __init__(self, agent_data):
         super().__init__()
 
@@ -310,7 +346,7 @@ class AgentItemWidget(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
 
-        self.icon_label = QLabel() # Removed the emoji fallback
+        self.icon_label = QLabel()
         self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.icon_label.setFixedSize(40, 40) 
 
@@ -318,8 +354,6 @@ class AgentItemWidget(QWidget):
         icon_filename = agent_data.get("icon_file", "default.svg")
         icon_path = get_resource_path(f"assets/{icon_filename}")
 
-        # Use the 'image' property to render the SVG inside the box
-        # Added 'padding' so the SVG doesn't touch the borders of the 28x28 box
         self.icon_label.setStyleSheet(f"""
             QLabel {{
                 background-color: #1e2330;
@@ -345,11 +379,11 @@ class AgentItemWidget(QWidget):
         self.dot = QLabel("●")
         self.dot.setStyleSheet("color: #5a6a82; font-size: 16px;") 
 
-        # --- NEW: Setup Drop Shadow for the glow effect ---
+        # State glow effect (pulsing yellow when active)
         self.glow_effect = QGraphicsDropShadowEffect(self)
         self.glow_effect.setOffset(0, 0) # Centering it makes it a "glow" instead of a shadow
         self.glow_effect.setColor(QColor(0, 0, 0, 0)) # Start fully transparent
-        self.glow_effect.setBlurRadius(0)
+        self.glow_effect.setBlurRadius(12)
         self.dot.setGraphicsEffect(self.glow_effect)
         
         layout.addWidget(self.icon_label)
@@ -358,34 +392,20 @@ class AgentItemWidget(QWidget):
         layout.addWidget(self.dot)
         
         self.anim = QVariantAnimation(self)
-        self.anim.setDuration(800) 
-        self.anim.setStartValue(QColor("#F4FF5E")) 
-        self.anim.setEndValue(QColor("#F0F5A6"))   
+        self.anim.setDuration(1500) 
+        # Start at Bright Yellow, 100% opaque (255)
+        self.anim.setStartValue(QColor(244, 255, 94, 255)) 
+        # End at Bright Yellow, nearly invisible (30)
+        self.anim.setEndValue(QColor(244, 255, 94, 30))
         self.anim.setLoopCount(-1) 
         self.anim.valueChanged.connect(self._on_color_pulse) # Renamed method
 
-        # --- NEW: Spread (blur radius) animation ---
-        self.blur_anim = QVariantAnimation(self)
-        self.blur_anim.setDuration(800)
-        self.blur_anim.setStartValue(6.0)  # Tight glow
-        self.blur_anim.setEndValue(20.0)   # Spread out glow
-        self.blur_anim.setLoopCount(-1)
-        self.blur_anim.valueChanged.connect(self._on_blur_pulse)
-
     def _on_color_pulse(self, color):
-        """Updates the dot color and the glow color."""
-        self.dot.setStyleSheet(f"color: {color.name()}; font-size: 16px;")
-        
-        # Match the glow color to the dot, but make it slightly transparent
-        glow_color = QColor(color)
-        glow_color.setAlpha(180) # 0-255 scale (180 provides a nice soft light)
-        self.glow_effect.setColor(glow_color)
-
-    def _on_blur_pulse(self, radius):
-        """Updates how far the glow spreads out."""
-        self.glow_effect.setBlurRadius(radius)
+        """Only pulses the shadow's transparency."""
+        self.glow_effect.setColor(color)
 
     def set_status(self, status):
+        """Updates styling based on pipeline progress."""
         if status == "running":
             self.setStyleSheet("""
                 AgentItemWidget {
@@ -403,30 +423,28 @@ class AgentItemWidget(QWidget):
                 }
             """)
 
-        # --- UPDATED: Animation and dot logic ---
+        # Animation and dot logic
         if status == "idle":
             self.anim.stop()
-            self.blur_anim.stop()
             self.dot.setStyleSheet("color: #5a6a82; font-size: 16px;") 
             self.glow_effect.setColor(QColor(0, 0, 0, 0)) # Turn off glow
-            
+
         elif status == "running":
-            self.anim.start() 
-            self.blur_anim.start()
-            
+            self.dot.setStyleSheet("color: #F4FF5E; font-size: 16px;")
+            self.anim.start()
+
         elif status == "done":
             self.anim.stop()
-            self.blur_anim.stop()
             self.dot.setStyleSheet("color: #22c55e; font-size: 16px;") 
             self.glow_effect.setColor(QColor(0, 0, 0, 0)) # Turn off glow
             
         elif status == "error":
             self.anim.stop()
-            self.blur_anim.stop()
             self.dot.setStyleSheet("color: #ef4444; font-size: 16px;") 
             self.glow_effect.setColor(QColor(0, 0, 0, 0)) # Turn off glow
 
 class DockerMonitorWorker(QThread):
+    """Background polling thread that updates the active containers UI table."""
     docker_update = pyqtSignal(list)
     
     def __init__(self):
@@ -450,30 +468,30 @@ class DockerMonitorWorker(QThread):
                 continue
 
             try:
-                # 1. RELAX THE FILTER: Look for the Compose label instead of a specific name
-                containers = self.client.containers.list(
-                    all=True, 
-                    filters={"name": "autoprototype-"}
-                )
-                
+                # Fetch ALL containers
+                containers = self.client.containers.list(all=True)
                 update_data = []
+
                 for c in containers:
-                    # 2. CLEANER NAMES: Look for compose labels to format the UI nicely
+                    # Filter by generated project labels to hide host user's unrelated containers
                     labels = c.attrs.get('Config', {}).get('Labels', {})
+                    compose_project = labels.get('com.docker.compose.project', '').lower()
+
+                    # if it's not one of our generated projects, skip it
+                    if 'autoprototype' not in compose_project:
+                        continue
+
                     compose_service = labels.get('com.docker.compose.service', '')
 
-                    # Since the project name is now 'autoprototype-itemtracker', 
-                    # let's clean it up for the UI to just show 'itemtracker [backend]'
-                    raw_project = labels.get('com.docker.compose.project', '')
-                    clean_project = raw_project.replace('autoprototype-', '')
+                    # Clean up the project name for the UI display
+                    clean_project = compose_project.replace('autoprototype-', '').replace('autoprototype_', '').replace('autoprototype', '')
                     
                     if clean_project and compose_service:
-                        # e.g., "autoprototype_xyz [frontend]"
                         display_name = f"{clean_project} [{compose_service}]"
                     else:
                         display_name = c.name
 
-                    # 3. PORT EXTRACTION (Remains the same)
+                    # Port Extraction Mapping
                     ports = []
                     port_data = c.attrs.get('NetworkSettings', {}).get('Ports', {})
                     if port_data:
@@ -484,8 +502,8 @@ class DockerMonitorWorker(QThread):
                     port_str = ", ".join(ports) if ports else "--"
                     
                     update_data.append({
-                        "name": display_name,         # Pass the cleaned-up name to the UI
-                        "raw_name": c.name,           # (Optional) Keep raw name just in case
+                        "name": display_name,
+                        "raw_name": c.name,
                         "status": c.status,
                         "ports": port_str
                     })
@@ -494,16 +512,16 @@ class DockerMonitorWorker(QThread):
             except Exception:
                 self.client = None 
             
-            self.sleep(1) 
+            self.sleep(1)
 
     def stop(self):
         self._is_running = False
 
 class SettingsDialog(QDialog):
+    """Preferences modal for API Keys and Output Paths."""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Preferences")
-        # Slightly increased height to accommodate the new row
         self.setFixedSize(480, 180) 
         
         self.setStyleSheet("""
@@ -531,7 +549,7 @@ class SettingsDialog(QDialog):
         self.api_key_input.setEchoMode(QLineEdit.EchoMode.Password) 
         self.api_key_input.setPlaceholderText("sk-ant-...")
         
-        # --- NEW: DIRECTORY SELECTION ---
+        # --- DIRECTORY SELECTION ---
         self.dir_input = QLineEdit()
         self.dir_input.setPlaceholderText("Default: ~/Documents/AutoPrototypes")
         
@@ -591,12 +609,12 @@ class SettingsDialog(QDialog):
         self.accept()
 
 class ProjectSetupDialog(QDialog):
+    """Initial modal configured at project creation time."""
     def __init__(self, default_dir, parent=None):
         super().__init__(parent)
         self.setWindowTitle("New Prototype Project")
         self.setFixedSize(450, 150)
-        
-        # Apply the exact same stylesheet used in your SettingsDialog
+
         self.setStyleSheet("""
             QDialog { background-color: #12151a; color: #c8d4e8; }
             QLabel { color: #c8d4e8; font-weight: bold; font-size: 12px; }
@@ -613,7 +631,7 @@ class ProjectSetupDialog(QDialog):
             }
             QPushButton:hover { background-color: #1d4ed8; }
         """)
-        
+
         layout = QVBoxLayout(self)
         form_layout = QFormLayout()
         
@@ -652,11 +670,15 @@ class ProjectSetupDialog(QDialog):
         return self.name_input.text().strip(), self.dir_input.text().strip()
     
 class MainWindow(QMainWindow, Ui_MainWindow):
+    """
+    Main Application Window. Initializes the Qt UI elements, binds events, 
+    and handles the lifecycle of background worker threads.
+    """
     def __init__(self):
         super().__init__()
         self.setupUi(self)
 
-        # --- NEW: Swap to QTextBrowser for clickable links ---
+        # QTextBrowser for clickable links
         self.allLogsLayout.removeWidget(self.logOutput)
         self.logOutput.deleteLater()
         
@@ -667,7 +689,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.logOutput.anchorClicked.connect(self._handle_link_click) # Route to our custom handler
         self.logOutput.setLineWrapMode(QTextBrowser.LineWrapMode.WidgetWidth)
         
-        # Manually transfer the CSS since we changed the widget type
         self.logOutput.setStyleSheet("""
             QTextBrowser#logOutput {
                 background-color: #0d0f12;
@@ -699,25 +720,21 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self._connect_signals()
         self._start_docker_monitor()
 
+        # Build custom UI badge animation resources
+        self.liveBadge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
         self.badge_glow = QGraphicsDropShadowEffect(self)
         self.badge_glow.setOffset(0, 0)
-        self.badge_glow.setColor(QColor(0, 0, 0, 0)) # Start transparent
-        self.badge_glow.setBlurRadius(0)
+        self.badge_glow.setBlurRadius(12)
+        self.badge_glow.setColor(QColor(0, 0, 0, 0))
         self.liveBadge.setGraphicsEffect(self.badge_glow)
 
         self.badge_anim = QVariantAnimation(self)
-        self.badge_anim.setDuration(800)
+        self.badge_anim.setDuration(1500)
         self.badge_anim.setStartValue(QColor("#F4FF5E"))
         self.badge_anim.setEndValue(QColor("#F0F5A6"))
         self.badge_anim.setLoopCount(-1)
         self.badge_anim.valueChanged.connect(self._on_badge_pulse)
-
-        self.badge_blur_anim = QVariantAnimation(self)
-        self.badge_blur_anim.setDuration(800)
-        self.badge_blur_anim.setStartValue(6.0)
-        self.badge_blur_anim.setEndValue(20.0)
-        self.badge_blur_anim.setLoopCount(-1)
-        self.badge_blur_anim.valueChanged.connect(self._on_badge_blur)
 
         self.set_badge_state("IDLE")
 
@@ -728,7 +745,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.spinner_timer = QTimer(self)
         self.spinner_timer.timeout.connect(self._update_spinner)
 
-    # --- NEW: Popup Error Handler ---
+    # --- Popup Error Handler ---
     def _show_error_popup(self, title: str, message: str):
         """Displays a dark-themed error dialog box to the user."""
         msg = QMessageBox(self)
@@ -736,7 +753,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         msg.setText(message)
         msg.setIcon(QMessageBox.Icon.Warning)
         
-        # Style it to match the application's dark theme
         msg.setStyleSheet("""
             QMessageBox {
                 background-color: #12151a;
@@ -762,29 +778,29 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         msg.exec()
 
     def _update_spinner(self):
-        """Advances the SVG spinner animation by rotating it."""
+        """Renders the rotating loading icon on active buttons."""
         # Ensure the set exists
         if not hasattr(self, 'active_spinner_buttons'):
             self.active_spinner_buttons = set()
 
         self.spinner_angle = (self.spinner_angle + 15) % 360  # Rotate 15 degrees per tick
-        
+    
         size = self.spinner_base.width()
         rotated = QPixmap(size, size)
         rotated.fill(Qt.GlobalColor.transparent)
-        
+
         painter = QPainter(rotated)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        
+
         # Move origin to center, rotate, and move back
         painter.translate(size / 2, size / 2)
         painter.rotate(self.spinner_angle)
         painter.translate(-size / 2, -size / 2)
-        
+
         painter.drawPixmap(0, 0, self.spinner_base)
         painter.end()
-        
+
         # Apply the rotated image as the icon to any button currently loading
         icon = QIcon(rotated)
         for btn in self.active_spinner_buttons:
@@ -800,8 +816,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if not hasattr(self, 'active_spinner_buttons') or not self.active_spinner_buttons:
             self.spinner_timer.stop()
             
-        self.runButton.setIcon(QIcon())               # <-- Apply the loaded icon
-        self.runButton.setText("▶ RUN PIPELINE")         # <-- Remove the text arrow
+        self.runButton.setIcon(QIcon())
+        self.runButton.setText("▶ RUN PIPELINE")
         self.runButton.setEnabled(True)
         self.stopButton.setEnabled(False)
         self.promptEdit.setReadOnly(False)
@@ -814,18 +830,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.docker_worker.start()
 
     def _on_badge_pulse(self, color):
-        """Pulses the text color and the shadow color of the live badge."""
+        """Animate badge text color and a static glow color without changing layout."""
         self.liveBadge.setStyleSheet(
             f"background-color: {self.badge_bg_color}; color: {color.name()}; border-radius:3px;"
             "font-size:9px; padding:1px 6px; letter-spacing:1px;"
         )
-        glow_color = QColor(color)
-        glow_color.setAlpha(180) 
-        self.badge_glow.setColor(glow_color)
 
-    def _on_badge_blur(self, radius):
-        """Pulses the radius of the live badge glow."""
-        self.badge_glow.setBlurRadius(radius)
+        glow_color = QColor(color)
+        glow_color.setAlpha(140)
+        self.badge_glow.setColor(glow_color)
 
     def _handle_docker_update(self, active_containers: list):
         self.dockerTable.setRowCount(len(active_containers))
@@ -868,7 +881,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.dockerTable.setItem(row, 3, state_item)
 
     def _setup_agent_list(self):
-# --- NEW: Override the list stylesheet to kill hover/selection effects ---
         self.agentList.clear()
         self.agent_widgets = [] 
         
@@ -888,8 +900,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def _setup_file_tree(self):
         self.fileTree.clear()
-        
-        # 3. Add the root item
         root = QTreeWidgetItem(self.fileTree, ["output/"])
         root.setIcon(0, QIcon(get_resource_path("assets/closed_folder.svg"))) 
         root.setExpanded(True)
@@ -911,29 +921,26 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def _connect_signals(self):
         self.runButton.clicked.connect(self._on_run)
         self.stopButton.clicked.connect(self._on_stop)
-
         self.launchButton.clicked.connect(self._on_launch_prototype)
-
         self.stopPrototypeButton.clicked.connect(self._on_stop_prototype)
-
         self.fileTree.itemClicked.connect(self._on_tree_item_clicked)
-
         self.actionPreferences.triggered.connect(self._open_settings)
 
     def _on_run(self):
-        # 1. Check for blank prompt
+        # Check for blank prompt
         prompt = self.promptEdit.toPlainText().strip()
         if not prompt:
             self._show_error_popup("Missing Input", "Please enter a prompt describing your application before running.")
             return
 
-        # 2. Check for API Key
-        load_dotenv()
+        # Check for API Key
+        env_path = os.path.join(get_app_root(), '.env')
+        load_dotenv(dotenv_path=env_path)
         if not os.getenv("ANTHROPIC_API_KEY"):
             self._show_error_popup("Missing API Key", "Your Anthropic API key is not configured.\n\nPlease open 'Settings > Preferences...' to add your key.")
             return
 
-        # 3. Check for Docker Engine
+        # Check for Docker Engine
         try:
             client = docker.from_env()
             client.ping()
@@ -941,40 +948,37 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self._show_error_popup("Docker Error", "Could not connect to Docker.\n\nPlease ensure Docker is running.")
             return
         
-        # --- NEW: PROMPT FOR DIRECTORY IF MISSING ---
         settings = QSettings("AutoPrototype", "AppSettings")
         base_dir = settings.value("output_directory", "").strip()
 
         if not base_dir or not os.path.isdir(base_dir):
             base_dir = os.path.expanduser("~")
 
-        # --- NEW: Launch the unified, styled dialog ---
         setup_dialog = ProjectSetupDialog(base_dir, self)
         if setup_dialog.exec() == QDialog.DialogCode.Accepted:
             project_name, final_dir = setup_dialog.get_values()
         else:
             return # User clicked Cancel
-            
+
         # Update settings if they changed the directory
         settings.setValue("output_directory", final_dir)
-            
+
         if not project_name:
             project_name = f"AutoPrototype_{uuid.uuid4().hex[:6]}"
         else:
             project_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', project_name)
 
-        # --- BUILD THE PROJECT FOLDER ---
         self.current_project_dir = os.path.join(final_dir, project_name)
         
         # Collision handling: if they named it "MyApp" but "MyApp" already exists, append a random string
         if os.path.exists(self.current_project_dir):
              self.current_project_dir += f"_{uuid.uuid4().hex[:4]}"
-             
+
         os.makedirs(self.current_project_dir, exist_ok=True)
-        
+
         # Update the File Tree UI to point to the new folder name
         self.fileTree.clear()
-        
+
         # Extract just the folder name (e.g., "MyApp") rather than the full absolute path for the UI tree
         display_name = os.path.basename(self.current_project_dir) 
         root = QTreeWidgetItem(self.fileTree, [f"{display_name}/"])
@@ -1053,31 +1057,44 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def _on_stop_prototype(self):
         try:
             client = docker.from_env()
-            # SECURE FILTER: Only list containers in the dropdown that have our safe prefix
-            containers = client.containers.list(filters={"name": "autoprototype-"})        
+            all_containers = client.containers.list()
+            
+            # Dictionary to map clean project names to one container name
+            unique_projects = {}
+            
+            for c in all_containers:
+                labels = c.attrs.get('Config', {}).get('Labels', {})
+                raw_project = labels.get('com.docker.compose.project', '')
+                
+                if 'autoprototype' in raw_project.lower():
+                    # Clean up the project name for the UI
+                    clean_project = raw_project.replace('autoprototype-', '').replace('autoprototype_', '').replace('autoprototype', '')
+                    
+                    # Store only the first container we find for each project
+                    if clean_project and clean_project not in unique_projects:
+                        unique_projects[clean_project] = c.name
+                        
         except Exception:
             self._show_error_popup("Docker Error", "Could not connect to Docker.")
             return
 
-        if not containers:
+        if not unique_projects:
             self._show_error_popup("No Prototypes", "There are currently no live prototypes running.")
             return
 
-        # Get the names of the running containers
-        container_names = [c.name for c in containers]
-
-        # Use PyQt's built-in dropdown dialog
-        selected_name, ok = QInputDialog.getItem(
+        # Use PyQt's built-in dropdown dialog with the clean project names
+        project_display_names = list(unique_projects.keys())
+        selected_project, ok = QInputDialog.getItem(
             self, 
             "Stop Prototype", 
             "Select a running prototype to destroy:", 
-            container_names, 
+            project_display_names, 
             0, 
             False
         )
 
-        # If the user clicked "OK" and selected a container
-        if ok and selected_name:
+        # If the user clicked "OK" and selected a project
+        if ok and selected_project:
             self.stopPrototypeButton.setEnabled(False)
             self.stopPrototypeButton.setText(" STOPPING...")
             
@@ -1090,8 +1107,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             if not self.spinner_timer.isActive():
                 self.spinner_timer.start(30)
             
+            # Get the actual container name associated with this project to feed the worker
+            target_container_name = unique_projects[selected_project]
+
             # Spin up the background worker
-            self.stopper_worker = StopperWorker(selected_name)
+            self.stopper_worker = StopperWorker(target_container_name)
             self.stopper_worker.log_line.connect(self._append_log)
             self.stopper_worker.finished_stop.connect(self._on_stop_finished)
             self.stopper_worker.start()
@@ -1110,7 +1130,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.stopPrototypeButton.setText("■ DESTROY")
         
         if success:
-            # DISABLE the destroy button so it returns to gray
+            # Disable the destroy button so it returns to gray
             self.stopPrototypeButton.setEnabled(False) 
             self.launchButton.setEnabled(True)
             self._show_error_popup("Destroyed", "Prototype container has been successfully destroyed.")
@@ -1127,13 +1147,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self._show_error_popup("Docker Error", "Could not connect to Docker.\n\nPlease ensure Docker is running before launching a prototype.")
             return
         
-        # 1. Start the file picker in the user's saved output directory
+        # Start the file picker in the user's saved output directory
         settings = QSettings("AutoPrototype", "AppSettings")
         base_dir = settings.value("output_directory", "").strip()
         if not base_dir or not os.path.isdir(base_dir):
             base_dir = os.path.expanduser("~")
 
-        # 2. Open dialog to select the specific prototype folder
+        # Open dialog to select the specific prototype folder
         target_dir = QFileDialog.getExistingDirectory(
             self, 
             "Select Prototype Directory to Launch", 
@@ -1144,7 +1164,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if not target_dir:
             return
 
-        # 3. Validation: Ensure the selected folder actually has a docker-compose file
+        # Validation: Ensure the selected folder actually has a docker-compose file
         compose_yml = os.path.join(target_dir, "docker-compose.yml")
         compose_yaml = os.path.join(target_dir, "docker-compose.yaml")
         
@@ -1155,7 +1175,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             )
             return
 
-        # 4. Update UI state
+        #  Update UI state
         self.launchButton.setEnabled(False)
         self.launchButton.setText(" BUILDING...")
 
@@ -1176,7 +1196,31 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # Extract the project name from the selected directory path (e.g. "AutoPrototype_xyz")
         project_name = os.path.basename(target_dir)
 
-        # 5. Initialize and start the Launcher Worker with the SELECTED directory
+        # Populate the file tree view from disk
+        self.fileTree.clear()
+        
+        # Create the root folder node
+        root_item = QTreeWidgetItem(self.fileTree, [f"{project_name}/"])
+        root_item.setIcon(0, QIcon(get_resource_path("assets/closed_folder.svg")))
+        root_item.setExpanded(True)
+
+        # Walk through the folder and add files to the tree
+        for root_dir, dirs, files in os.walk(target_dir):
+            # Skip heavy or hidden folders so the UI doesn't freeze
+            if '.git' in root_dir or 'node_modules' in root_dir or '__pycache__' in root_dir:
+                continue
+                
+            for file in files:
+                full_path = os.path.join(root_dir, file)
+                rel_path = os.path.relpath(full_path, target_dir).replace("\\", "/")
+                self.add_file_to_tree(rel_path)
+
+        # Update the file count label
+        self.fileCountLabel.setText(
+            f"{self._count_files(self.fileTree.invisibleRootItem())} files"
+        )
+
+        # Initialize and start the Launcher Worker with the selected directory
         self.launcher_worker = LauncherWorker(target_dir, project_name)
         self.launcher_worker.log_line.connect(self._append_log)
         self.launcher_worker.finished_launch.connect(self._on_launch_finished)
@@ -1195,7 +1239,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.launchButton.setText("▶ LAUNCH")
         
         if success:
-            # ENABLE the destroy button so it turns red
+            # enable the destroy button so it turns red
             self.launchButton.setEnabled(False)
             self.stopPrototypeButton.setEnabled(True) 
             self._show_error_popup("Success!", "Prototype launched successfully!\n\nCheck the live output logs for localhost URLs.")
@@ -1203,9 +1247,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.launchButton.setEnabled(True)
 
     def _append_log(self, agent: str, message: str, color: str = "#c8d4e8"):
+        """
+        Parses streamed console text to dynamically colorize tags and convert 
+        raw http:// substrings into clickable UI anchor tags.
+        """
         timestamp = datetime.now().strftime("%H:%M:%S")
 
-        # --- GOAL 1: Force [SYSTEM] to be blue unless it's a red error ---
+        # Force [SYSTEM] to be blue unless it's a red error
         if agent == "[SYSTEM]" and color != "#ef4444":
             color = "#f739a8" 
         
@@ -1217,11 +1265,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         doc_font.setFixedPitch(True)
 
         metrics = QFontMetrics(doc_font)
-        indent_pixels = metrics.horizontalAdvance(" " * 28) 
+        indent_pixels = metrics.horizontalAdvance(" " * 28)
 
+        # Format blocks for neat multiline alignment
         block_fmt = QTextBlockFormat()
-        block_fmt.setLeftMargin(indent_pixels)       
-        block_fmt.setTextIndent(-indent_pixels)      
+        block_fmt.setLeftMargin(indent_pixels)
+        block_fmt.setTextIndent(-indent_pixels)
 
         fmt_timestamp = QTextCharFormat()
         fmt_timestamp.setForeground(QColor("#5a6a82"))
@@ -1255,7 +1304,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             cursor.setCharFormat(fmt_agent)
             cursor.insertText(f"{agent:<10}")
             
-            # --- GOAL 2: Parse and inject clickable URLs ---
+            # Parse and inject clickable URLs
             parts = url_pattern.split(line)
             for part in parts:
                 if url_pattern.match(part):
@@ -1292,46 +1341,43 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.progressPct.setText(f"{value}%")
 
     def set_badge_state(self, state: str):
-        """Updates the live badge text, colors, and animations based on the state."""
-        # Stop animations while we change the colors
+        """Updates the live badge text and color animation."""
         self.badge_anim.stop()
-        self.badge_blur_anim.stop()
 
         if state == "IDLE":
             self.liveBadge.setText("● IDLE")
-            self.badge_bg_color = "#1e3a8a"               # Dark blue background
-            self.badge_anim.setStartValue(QColor("#3b82f6")) # Blue text
-            self.badge_anim.setEndValue(QColor("#93c5fd"))   # Lighter blue glow
+            self.badge_bg_color = "#1e3a8a"
+            self.badge_anim.setStartValue(QColor("#3b82f6"))
+            self.badge_anim.setEndValue(QColor("#93c5fd"))
 
         elif state == "RUNNING":
             self.liveBadge.setText("● RUNNING")
-            self.badge_bg_color = "#3f3f00"               # Dark yellow background
-            self.badge_anim.setStartValue(QColor("#facc15")) # Yellow text
-            self.badge_anim.setEndValue(QColor("#fef08a"))   # Lighter yellow glow
+            self.badge_bg_color = "#3f3f00"
+            self.badge_anim.setStartValue(QColor("#facc15"))
+            self.badge_anim.setEndValue(QColor("#fff08a"))
 
         elif state == "SUCCESS":
             self.liveBadge.setText("● SUCCESS")
-            self.badge_bg_color = "#166534"               # Dark green background
-            self.badge_anim.setStartValue(QColor("#22c55e")) # Green text
-            self.badge_anim.setEndValue(QColor("#86efac"))   # Lighter green glow
+            self.badge_bg_color = "#166534"
+            self.badge_anim.setStartValue(QColor("#22c55e"))
+            self.badge_anim.setEndValue(QColor("#86efac"))
 
         elif state == "WARNING":
             self.liveBadge.setText("● WARNING")
-            self.badge_bg_color = "#713f12"               # Dark orange background
-            self.badge_anim.setStartValue(QColor("#eab308")) # Orange text
-            self.badge_anim.setEndValue(QColor("#fde047"))   # Lighter orange glow
+            self.badge_bg_color = "#713f12"
+            self.badge_anim.setStartValue(QColor("#eab308"))
+            self.badge_anim.setEndValue(QColor("#fde047"))
 
         elif state == "STOPPED":
             self.liveBadge.setText("● STOPPED")
-            self.badge_bg_color = "#450a0a"               # Dark red background
-            self.badge_anim.setStartValue(QColor("#ef4444")) # Red text
-            self.badge_anim.setEndValue(QColor("#fca5a5"))   # Lighter red glow
+            self.badge_bg_color = "#450a0a"
+            self.badge_anim.setStartValue(QColor("#ef4444"))
+            self.badge_anim.setEndValue(QColor("#fca5a5"))
 
-        # Restart animations with the newly configured colors
         self.badge_anim.start()
-        self.badge_blur_anim.start()
 
     def add_file_to_tree(self, path: str):
+        """Constructs and inserts a node into the filesystem UI tree dynamically."""
         parts = path.split("/")
         root = self.fileTree.invisibleRootItem().child(0)
         parent = root
@@ -1344,7 +1390,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     found = parent.child(j)
                     break
             if found is None:
-                # Make sure your add_file_to_tree looks like this:
                 is_dir = i < len(parts) - 1
                 label = f"{part}/" if is_dir else f"{part}" # <-- No unicode arrows here
                 node = QTreeWidgetItem(parent, [label])
@@ -1381,7 +1426,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         count = 0
         for i in range(item.childCount()):
             child = item.child(i)
-            if "📄" in child.text(0):
+            if child.childCount() == 0:
                 count += 1
             count += self._count_files(child)
         return count
@@ -1393,25 +1438,22 @@ if __name__ == "__main__":
     from PyQt6.QtGui import QPalette, QColor, QIcon 
     # Make sure to import QIcon, QApplication etc. if they aren't already imported at the top
 
-    # 1. Force Wayland in WSL to allow dark Client-Side Decorations (CSD). 
-    # Fallback to xcb (X11) if Wayland isn't available.
+    # Force Wayland in WSL to allow dark Client-Side Decorations (CSD)
     if sys.platform.startswith("linux"):
         os.environ["QT_QPA_PLATFORM"] = "wayland;xcb"
         os.environ["GTK_THEME"] = "Adwaita:dark" # Extra hint for some Linux WMs
 
-    # 2. Force Windows/WSL taskbar to use a custom ID BEFORE QApplication is initialized
+    # Force Windows/WSL taskbar to use a custom ID before QApplication is initialized
     try:
-        # Create an even more distinct unique ID for your app
         myappid = 'architectai.agentic_ai_prototype_frontend.v1' 
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
     except Exception:
-        # Fails gracefully if not applicable (like on macOS)
         pass 
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion") 
-    
-    # 3. Set a global Dark Palette so the OS/Wayland knows to use dark window frames
+
+    # Set a global Dark Palette so the OS/Wayland knows to use dark window frames
     palette = QPalette()
     palette.setColor(QPalette.ColorRole.Window, QColor(13, 15, 18))
     palette.setColor(QPalette.ColorRole.WindowText, QColor(200, 212, 232))
@@ -1427,17 +1469,21 @@ if __name__ == "__main__":
     palette.setColor(QPalette.ColorRole.Highlight, QColor(59, 130, 246))
     palette.setColor(QPalette.ColorRole.HighlightedText, QColor(255, 255, 255))
     app.setPalette(palette)
-    
-    # 4. Set the global application icon using the NEW .ICO file
-    # Ensure get_resource_path is correctly defined and imported
-    app_icon_path = get_resource_path("assets/logo.svg") 
+
+    # Set the global application icon dynamically based on OS
+    if sys.platform == 'darwin':
+        app_icon_path = get_resource_path("assets/logo.icns") # Mac
+    elif sys.platform == 'win32':
+        app_icon_path = get_resource_path("assets/logo.ico")  # Windows
+    else:
+        app_icon_path = get_resource_path("assets/logo.svg")  # Linux
+
     app_icon = QIcon(app_icon_path)
     app.setWindowIcon(app_icon)
 
     window = MainWindow()
 
-    # 5. Force Dark Title Bar on native Windows 10/11
-    # Must be done AFTER window = MainWindow() so the window ID exists
+    # Force Dark Title Bar on native Windows 10/11
     if sys.platform == "win32":
         try:
             # 20 is the DWMWA_USE_IMMERSIVE_DARK_MODE attribute

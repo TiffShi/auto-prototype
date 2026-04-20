@@ -5,6 +5,10 @@ from core.utils import apply_patches, safe_invoke
 
 # --- DATA AGENT (Database + Object Storage) ---
 def data_agent_node(state: AutoPrototypeState) -> dict:
+    """
+    Manages data infrastructure, including SQL schema generation, seeding, 
+    and optional object storage (MinIO) configuration.
+    """
     iteration = state.get('iteration_count', 0)
     print(f"Data Agent Active (Iteration {iteration})")
     llm = ChatAnthropic(model="claude-sonnet-4-6", temperature=0.1)
@@ -13,6 +17,8 @@ def data_agent_node(state: AutoPrototypeState) -> dict:
     previous_code = state.get("data_code", "")
 
     if is_fix_mode:
+        # DEBUG MODE: Targets infrastructure-specific failures (e.g., SQL syntax errors or 
+        # bucket policy misconfigurations) using surgical updates
         system_prompt = "You are a Senior Data Infrastructure Engineer fixing bugs."
         human_prompt = """TASK: SURGICAL BUG FIX (DIFF STRATEGY).
         You must fix the bugs identified by the QA Debugger in the existing database/storage setup code.
@@ -51,6 +57,8 @@ def data_agent_node(state: AutoPrototypeState) -> dict:
         return {"data_code": new_code}
 
     else:
+        # INITIALIZATION MODE: Creates the relational schema, idempotent seed data, 
+        # and language-specific DB initialization scripts.
         system_prompt = """You are a Senior Data Infrastructure Engineer. Analyze the architecture plan
         and backend code to provision the database layer AND (if required) object storage.
 
@@ -130,11 +138,11 @@ def data_agent_node(state: AutoPrototypeState) -> dict:
         """
 
         human_prompt = """Architecture Plan:
-{plan}
+        {plan}
 
-Backend Source Code (match ORM model names/columns/types exactly):
-{backend_code}
-"""
+        Backend Source Code (match ORM model names/columns/types exactly):
+        {backend_code}
+        """
 
         prompt = ChatPromptTemplate.from_messages([
             ("system", system_prompt),

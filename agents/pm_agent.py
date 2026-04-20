@@ -6,9 +6,16 @@ from core.utils import safe_invoke
 
 def product_manager_node(state: AutoPrototypeState) -> dict:
     print("Product Manager Agent Active")
+    """
+    Translates a user's raw idea into a structured architectural plan.
     
+    Enforces strict constraints for the tech stack, database, object storage, 
+    and Docker Compose port mappings. Outputs critical infrastructure decisions 
+    using XML-like tags for robust extraction by the pipeline.
+    """
+
     llm = ChatAnthropic(model="claude-sonnet-4-6", temperature=0.2)
-    
+
     system_prompt = """You are an expert Software Product Manager. 
     Your job is to take a user's raw idea and output a clear, actionable architecture plan.
     COMPOSE CONTRACT:
@@ -45,17 +52,18 @@ def product_manager_node(state: AutoPrototypeState) -> dict:
     
     After the tags, provide your functional requirements and a precise file structure for the chosen architecture.
     """
-    
+
     prompt = ChatPromptTemplate.from_messages([
         ("system", system_prompt),
         ("human", "Here is the user's idea: {idea}")
     ])
-    
+
     # Run the LLM with the user's idea
     response = safe_invoke(prompt | llm, {"idea": state["user_idea"]})
     content = response.content
-    
-    # Parse out the architecture choices
+
+    # Parse out the architecture choices choices using regex. If the LLM omits the tags, 
+    # default to the standard React/FastAPI/PostgreSQL stack to prevent pipeline crashes.
     stack_match = re.search(r"<stack>(.*?)</stack>", content, re.IGNORECASE)
     db_match = re.search(r"<database>(.*?)</database>", content, re.IGNORECASE)
     storage_match = re.search(r"<storage>(.*?)</storage>", content, re.IGNORECASE)

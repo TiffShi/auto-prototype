@@ -1,10 +1,12 @@
-# core/state.py
 from typing import TypedDict, List, Optional
 
 class AutoPrototypeState(TypedDict):
-    # The input
+    """
+    Defines the shared memory object passed between LangGraph nodes.
+    Tracks the user's initial idea, generated code output, and QA iteration state.
+    """
+    # Base inputs
     user_idea: str
-
     project_dir: Optional[str]
 
     # The PM's high-level stack choice (e.g., "Vue/Express")
@@ -20,9 +22,8 @@ class AutoPrototypeState(TypedDict):
     backend_code: Optional[str]
 
     # The Data agent's output (database + optional object storage)
-    data_code: Optional[str]        # All generated files: schema.sql, seed.sql, init_db.py,
-                                    # and optionally bucket/init_bucket.py, bucket/minio_setup.sh
-    bucket_needed: Optional[bool]   # Set by the data agent; False = skip MinIO entirely
+    data_code: Optional[str]
+    bucket_needed: Optional[bool]
 
     # The DevOps output
     infra_code: Optional[str]

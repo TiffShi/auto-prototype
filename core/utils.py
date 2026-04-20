@@ -1,8 +1,21 @@
 import os
 import re
+import sys
 from core.state import AutoPrototypeState
 import anthropic
 from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
+
+def get_app_root():
+    """
+    Resolves the absolute root directory of the application.
+    Accounts for execution in a standard Python environment vs. a frozen executable (e.g., PyInstaller).
+    """
+    if getattr(sys, 'frozen', False):
+        # Running as a compiled executable (return the folder containing the .exe)
+        return os.path.dirname(sys.executable)
+    else:
+        # Running as a standard python script
+        return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def _log_retry(retry_state):
     """Logs the retry countdown to the UI via the stdout redirector."""
@@ -15,11 +28,20 @@ def _log_retry(retry_state):
     before_sleep=_log_retry
 )
 def safe_invoke(chain, params):
-    """Safely invokes a LangChain prompt|llm chain with exponential backoff."""
+    """
+    Safely invokes a LangChain prompt|llm chain with exponential backoff.
+    Mitigates Anthropic API rate limits and temporary network timeouts.
+    """
     return chain.invoke(params)
 
 # --- DIFF UTILITY FUNCTION ---
 def apply_patches(original_code: str, patch_text: str) -> str:
+    """
+    Applies SEARCH/REPLACE diff blocks to an existing code string.
+    Fails safely by ignoring patches if the exact search block isn't found, 
+    preventing malformed code insertions.
+    """
+    # Matches everything between <<<SEARCH and ===REPLACE, then ===REPLACE and >>>
     pattern = r"<<<SEARCH\n(.*?)\n===REPLACE\n(.*?)\n>>>"
     matches = re.findall(pattern, patch_text, re.DOTALL)
 
@@ -38,22 +60,28 @@ def apply_patches(original_code: str, patch_text: str) -> str:
 
 # --- FILE WRITER UTILITY ---
 def write_files_to_disk(state: AutoPrototypeState):
-    """Parses ### path/to/file.ext ``` code ``` blocks from each agent's output and writes
-    them to the dynamic output directory selected by the user."""
-    
-    # 1. Grab the dynamic path from the UI! Fallback to local folder if missing.
-    base_dir = state.get("project_dir", os.path.join(os.getcwd(),"output_prototype"))
+    """
+    Extracts structured markdown code blocks from the agents' outputs and writes 
+    them to the local filesystem, automatically building the required directory structure.
+    """
+
+    # Grab the dynamic path from the UI, fallback to local folder if missing
+    base_dir = state.get("project_dir", os.path.join(get_app_root(), "output_prototype"))
 
     def parse_and_write(content: str):
+        # Regex captures the file path (group 1) and the raw code payload (group 2)
+        # Handles optional backticks around the filepath in the LLM output
+
         pattern = r"###\s+`?([\w\./_-]+\.\w+)`?\s+```\w*\n(.*?)```"
         blocks  = re.findall(pattern, content, re.DOTALL)
         for file_path, code in blocks:
-            # 2. Trust the LLM's path entirely (e.g. "backend/main.py", "database/schema.sql")
+            # trust the LLM's path entirely (e.g. "backend/main.py", "database/schema.sql")
             clean_path = file_path.strip()
             full_path = os.path.join(base_dir, clean_path)
-            
+
+            # Ensure the nested directories (e.g., frontend/src/components) exist before writing
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
-            with open(full_path, "w") as f:
+            with open(full_path, "w", encoding="utf-8") as f:
                 f.write(code.strip())
 
     if state.get("backend_code"):
@@ -63,5 +91,5 @@ def write_files_to_disk(state: AutoPrototypeState):
         parse_and_write(state["frontend_code"])
 
     if state.get("data_code"):
-        # Correctly writes to both database/ and bucket/ inside the user's chosen project_dir
+        # writes to both database/ and bucket/ inside the user's chosen project_dir
         parse_and_write(state["data_code"])
