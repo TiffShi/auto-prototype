@@ -5,68 +5,76 @@ from core.utils import safe_invoke
 
 # --- DEBUGGER AGENT ---
 def debugger_node(state: AutoPrototypeState) -> dict:
+    """
+    Acts as the QA gatekeeper. Evaluates runtime logs from the Docker sandbox 
+    against the generated code to determine if the architecture successfully compiled and started.
+    
+    Returns:
+        dict: Updates `error_messages` and increments `iteration_count` if failures are detected,
+              or clears errors if the system passes.
+    """
     print("Debugger Agent Active (Analyzing Logs)")
     llm = ChatAnthropic(model="claude-sonnet-4-6", temperature=0.1)
 
     system_prompt = """You are a QA Reviewer and Tech Lead.
-Review the Architecture Plan, all generated code layers, and the RUNTIME LOGS from the Docker Sandbox.
+    Review the Architecture Plan, all generated code layers, and the RUNTIME LOGS from the Docker Sandbox.
 
-The system now runs using Docker Compose and logs may be grouped by service, for example:
-===== SERVICE: db =====
-===== SERVICE: backend =====
-===== SERVICE: frontend =====
-===== SERVICE: minio =====
+    The system now runs using Docker Compose and logs may be grouped by service, for example:
+    ===== SERVICE: db =====
+    ===== SERVICE: backend =====
+    ===== SERVICE: frontend =====
+    ===== SERVICE: minio =====
 
-CRITICAL CHECKLIST — verify each of the following:
-1. Did Docker Compose fail to build or start any service?
-2. Did the database fail to initialize? (SQL errors, connection refused, missing tables, bad seed/init order)
-3. Did the backend crash? (Python tracebacks, ImportErrors, syntax errors, DB connection errors)
-4. Did the frontend crash? (React/Vite compilation errors, missing env vars, runtime startup failure)
-5. Did MinIO fail to start or create buckets? (only relevant if bucket files are present)
-6. Are there networking/configuration issues? (wrong service name, wrong internal port, localhost used between containers)
+    CRITICAL CHECKLIST — verify each of the following:
+    1. Did Docker Compose fail to build or start any service?
+    2. Did the database fail to initialize? (SQL errors, connection refused, missing tables, bad seed/init order)
+    3. Did the backend crash? (Python tracebacks, ImportErrors, syntax errors, DB connection errors)
+    4. Did the frontend crash? (React/Vite compilation errors, missing env vars, runtime startup failure)
+    5. Did MinIO fail to start or create buckets? (only relevant if bucket files are present)
+    6. Are there networking/configuration issues? (wrong service name, wrong internal port, localhost used between containers)
 
-If the logs show clear startup success across all layers with no crashes, output exactly: 'VERDICT: PASS'.
+    If the logs show clear startup success across all layers with no crashes, output exactly: 'VERDICT: PASS'.
 
-If there is any crash or error, output 'VERDICT: FAIL' followed by a root-cause analysis and explicit fix instructions for the relevant agent(s).
+    If there is any crash or error, output 'VERDICT: FAIL' followed by a root-cause analysis and explicit fix instructions for the relevant agent(s).
 
-CRITICAL FORMATTING — always include all sections below, even if a section has no issues
-(write "None" in that case). This is required so each agent can find its own feedback:
+    CRITICAL FORMATTING — always include all sections below, even if a section has no issues
+    (write "None" in that case). This is required so each agent can find its own feedback:
 
-BACKEND ISSUES:
-[Python/FastAPI/Express bugs, import errors, runtime crashes]
+    BACKEND ISSUES:
+    [Python/FastAPI/Express bugs, import errors, runtime crashes]
 
-FRONTEND ISSUES:
-[React/JS/package.json bugs, compilation errors, missing env vars]
+    FRONTEND ISSUES:
+    [React/JS/package.json bugs, compilation errors, missing env vars]
 
-DATABASE ISSUES:
-[Schema errors, seed/init failures, connection string mismatches, missing tables]
+    DATABASE ISSUES:
+    [Schema errors, seed/init failures, connection string mismatches, missing tables]
 
-BUCKET ISSUES:
-[MinIO startup failures, bucket creation errors, SDK config issues]
+    BUCKET ISSUES:
+    [MinIO startup failures, bucket creation errors, SDK config issues]
 
-DEVOPS ISSUES:
-[Compose errors, bad ports, bad service names, wrong volume/init strategy, dependency issues]
+    DEVOPS ISSUES:
+    [Compose errors, bad ports, bad service names, wrong volume/init strategy, dependency issues]
 
-INTEGRATION ISSUES:
-[Backend cannot reach DB, frontend cannot reach backend, services using wrong hostnames/ports]
-"""
+    INTEGRATION ISSUES:
+    [Backend cannot reach DB, frontend cannot reach backend, services using wrong hostnames/ports]
+    """
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", system_prompt),
         ("human", """Plan:
-{plan}
+        {plan}
 
-Backend:
-{backend}
+        Backend:
+        {backend}
 
-Frontend:
-{frontend}
+        Frontend:
+        {frontend}
 
-Data Layer (database + bucket setup):
-{data}
+        Data Layer (database + bucket setup):
+        {data}
 
-RUNTIME LOGS:
-{logs}""")
+        RUNTIME LOGS:
+        {logs}""")
     ])
 
     response = safe_invoke(prompt | llm, {
@@ -80,6 +88,7 @@ RUNTIME LOGS:
     content = response.content
     print(f"Debugger Output: {content[:150]}...")
 
+    # State machine routing: 'PASS' ends the fix loop; 'FAIL' appends feedback and increments iteration
     if "VERDICT: PASS" in content.upper():
         return {
             "error_messages": []

@@ -1,0 +1,46 @@
+name: Build and Release ArchitectAI
+on:
+  push:
+    tags:
+      - 'v*' # This triggers the build when you push a tag like v1.0.0
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          
+      - name: Install Dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
+          
+      - name: Build with PyInstaller
+        run: pyinstaller architectai.spec --clean
+
+      # This bundles the dist folder into a zip for easy downloading
+      - name: Zip Result
+        run: |
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            powershell Compress-Archive -Path dist/ArchitectAI -DestinationPath ArchitectAI-Windows.zip
+          else
+            zip -r ArchitectAI-${{ matrix.os }}.zip dist/ArchitectAI
+          fi
+        shell: bash
+
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ArchitectAI-*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

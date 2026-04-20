@@ -5,14 +5,24 @@ from core.utils import apply_patches, safe_invoke
 
 # --- FRONTEND AGENT ---
 def frontend_agent_node(state: AutoPrototypeState) -> dict:
+    """
+    Orchestrates the generation and refinement of frontend UI code.
+
+    Depending on the iteration state, it either generates the initial web application
+    from the architecture plan or applies targeted SEARCH/REPLACE patches to fix QA-identified bugs.
+    """
     iteration = state.get('iteration_count', 0)
     print(f"Frontend Agent Active (Iteration {iteration})")
-    llm = ChatAnthropic(model="claude-sonnet-4-6", temperature=0.1)    
+    llm = ChatAnthropic(model="claude-sonnet-4-6", temperature=0.1)
 
     is_fix_mode = iteration > 0
     previous_code = state.get("frontend_code", "")
 
     if is_fix_mode:
+        # SURGICAL FIX MODE: Uses diff blocks to update specific chunks of code 
+        # without rewriting the entire frontend application. This saves tokens and 
+        # prevents the LLM from dropping previously functioning UI components.
+
         system_prompt = "You are a Senior Frontend Engineer fixing bugs."
         human_prompt = """TASK: SURGICAL BUG FIX (DIFF STRATEGY).
         You must fix the bugs identified by the QA Debugger in the existing frontend code.
@@ -54,6 +64,10 @@ def frontend_agent_node(state: AutoPrototypeState) -> dict:
         return {"frontend_code": new_code}
         
     else:
+        # INITIAL BUILD: Generates the complete initial frontend structure.
+        # Enforces strict configuration for port 5173 and dynamic API URL bindings via .env 
+        # to ensure it communicates properly with the backend within the Docker Compose network.
+
         stack_name = state.get("selected_stack_name", "React Vite")
         system_prompt = f"""You are a Senior Frontend Engineer. Output the full frontend source code for the {stack_name} stack.
         Use this exact format for every file:

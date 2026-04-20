@@ -2,8 +2,11 @@
 
 **Project Goal:** To build a fully autonomous, multi-agent workflow that transforms a natural language idea into a functional, multi-file software prototype. AutoPrototype dynamically selects tech stacks (e.g., React, FastAPI, Spring Boot) and writes, tests, and self-corrects its own code.
 
-## Current Project Status: Frontend UI and Database Agent
-The system has been heavily refactored for maintainability and scalability. Agents are now strictly separated by role, utility functions are isolated, and the Docker Sandbox features advanced dual-log parsing to catch both code compilation errors and infrastructure/engine failures.
+## Current Project Status: Multi-Service Orchestration & Desktop GUI
+The system has been refactored for realism, scalability, and usability. 
+* **Docker Compose Integration:** The DevOps agent now provisions a true microservice architecture, splitting the frontend, backend, database, and storage (MinIO) into isolated, networked containers.
+* **Data Infrastructure Agent:** A dedicated Data Agent now handles SQL schema generation, idempotent data seeding, and object storage bucket policies. 
+* **ArchitectAI GUI:** A rich PyQt6 desktop application now serves as the primary interface, featuring real-time log streaming, pipeline progress tracking, a dynamic file tree view, and live Docker container monitoring.
 
 ## Technical Architecture: How it Works
 
@@ -12,43 +15,51 @@ AutoPrototype is a **State Machine** built with **LangGraph**. It mimics a real-
 ```bash
 auto-prototype/
 ├── agents/                   # Isolated AI Agent roles
-│   ├── pm_agent.py           # Product Manager (Architecture & Stack Selection)
+│   ├── pm_agent.py           # Product Manager (Architecture, Stack & Storage Selection)
 │   ├── backend_agent.py      # Backend Developer (Code Generation & Patching)
 │   ├── frontend_agent.py     # Frontend Developer (Code Generation & Patching)
-│   ├── devops_agent.py       # Infrastructure (Generates Dockerfile & startup.sh)
-│   ├── debugger_agent.py     # QA/Tech Lead (Analyzes runtime logs)
+│   ├── data_agent.py         # Data Engineer (DB Schemas, Seeding, MinIO Buckets)
+│   ├── devops_agent.py       # Infrastructure (Generates Docker Compose & Dockerfiles)
+│   ├── debugger_agent.py     # QA/Tech Lead (Analyzes multi-service runtime logs)
 │   └── system_nodes.py       # Deterministic nodes (Code Execution & File Saving)
 ├── core/                     # LangGraph Orchestration
 │   ├── graph.py              # State Machine & Edge routing definitions
 │   ├── state.py              # Shared "Whiteboard" (AutoPrototypeState)
 │   └── utils.py              # Helper functions (Surgical Diff patching, File I/O)
+├── frontend/                 # Desktop Application (ArchitectAI)
+│   ├── main.py               # ENTRY POINT 1: The PyQt6 Desktop UI
+│   ├── ui_architectai.py     # Compiled UI layout
+│   └── assets/               # SVGs and Icons
 ├── sandbox/                  # The Execution Engine
-│   └── executor.py           # Docker Python SDK integration 
+│   └── executor.py           # Docker Compose Python SDK integration 
 ├── output_prototype/         # THE GENERATED PRODUCT (AI-Built)
 │   ├── architecture_plan.md
-│   ├── backend/              # e.g., FastAPI, Spring Boot, or Express App
-│   ├── frontend/             # e.g., React Vite App
-│   ├── Dockerfile            # AI-generated infra
-│   └── startup.sh            # AI-generated run script
-├── .env                      # API Keys (Anthropic/OpenAI)
-├── .gitignore                
+│   ├── docker-compose.yml    # AI-generated orchestration
+│   ├── backend/              # Source code + backend Dockerfile
+│   ├── frontend/             # Source code + frontend Dockerfile
+│   ├── database/             # SQL schemas, seed data, and init scripts
+│   └── bucket/               # MinIO initialization scripts (if storage requested)
+├── .env                      # API Keys (Anthropic)
 ├── requirements.txt          # Project dependencies
-├── main.py                   # ENTRY POINT 1: Run the AI Factory loop
-├── README.md                 # Project overview
-└── run_live.py               # ENTRY POINT 2: Manually boot the generated prototype
+├── architectai.spec          # PyInstaller spec for building standalone executables
+├── main.py                   # ENTRY POINT 2: CLI / Headless run 
+└── README.md                 # Project overview```
 ```
 
 ### 1. The Shared State (`core/state.py`)
-All agents communicate via the AutoPrototypeState. This dictionary persists throughout the run, holding the architecture plan, the raw code strings, generated Docker instructions, and runtime error logs.
+All agents communicate via the **AutoPrototypeState**. This dictionary persists throughout the run, holding the architecture plan, the raw code strings, generated Docker instructions, and runtime error logs.
 
 ### 2. The Agent Nodes (`agents/`)
 * **Product Manager Agent**: High-level strategist. Defines the tech stack, functional requirements, and enforces strict networking rules (Ports 8080/5173).
-* **Developer Agents**: Frontend and Backend coders. On their first pass, they write the full codebase. On subsequent passes, they use a Surgical Diff Strategy (<<<SEARCH and ===REPLACE>>>) to patch specific bugs without rewriting entire files.
-* **DevOps Agent**: Reads a summary of the developers' code and dynamically provisions the infrastructure required to run it concurrently.
-* **Debugger Agent**: The QA Lead. It reads the raw execution logs from the sandbox, determines if the build passed or failed, and routes targeted feedback back to the specific developers.
+* **Developer Agents**: Frontend and Backend coders. On their first pass, they write the full codebase. On subsequent passes, they use a Surgical Diff Strategy (<<<SEARCH and ===REPLACE>>>) to patch specific bugs without rewriting entire files, saving tokens and preserving working logic.
+* **Data Agent**: Provisions the data layer. Matches the backend ORM to create exact SQL schemas, writes idempotent seed scripts, and configures MinIO buckets for file uploads if the PM deems it necessary.
+* **DevOps Agent**: Reads a summary of the developers' code and dynamically provisions a `docker-compose.yml` and associated `Dockerfile`s. It handles complex volume mount logic to ensure database init scripts run correctly based on the chosen schema strategy (e.g., native DB init vs. backend migrations like Flyway).
+* **Debugger Agent**: The QA Lead. It reads the raw execution logs from the Docker Compose sandbox, determines if the build passed or failed, and targets specific feedback back to the responsible agent (Frontend, Backend, DB, or DevOps).
 
 ### 3. The Docker Sandbox (`sandbox/executor.py`)
-Because autonomous code generation can be unpredictable, we execute the AI's code inside an isolated Docker container. The executor features Dual-Log Parsing:
+Because autonomous code generation can be unpredictable, we execute the AI's code inside an isolated Docker Compose network. The executor features Multi-Service Log Parsing:
+
+It orchestrates `docker compose up --build -d`, waits for the system to stabilize, and utilizes docker compose logs to capture output on a per-service basis. This allows the Debugger Agent to isolate exactly which container failed (e.g., PostgreSQL failing to seed vs. React failing to compile).
 
 1. Engine Errors: Captures fatal Docker Daemon failures (e.g., failing to pull a base image).
 2. Stream Errors: Captures compiler and package manager errors (e.g., Maven, NPM, Python tracebacks), truncating them to the last 10,000 characters to prevent AI context-window overflow while ensuring the final stack trace is always visible.
@@ -56,17 +67,28 @@ Because autonomous code generation can be unpredictable, we execute the AI's cod
 ### 4. The Workflow Graph (`core/graph.py`)
 The flow is orchestrated as a directed relay with a conditional self-correction loop:
 
-**Idea** → **PM** → **Backend Dev** → **Frontend Dev** → **DevOps** → **Executor** → **Debugger** → **Success**.
+**Idea** → **PM** → **Backend Dev** → **Frontend Dev** → **Data** → **DevOps** → **Executor** → **Debugger** → **Success/Save**.
 
-(If Debugger finds bugs, route back to Backend/Frontend. If max iterations hit or 0 bugs found, route to Success).
-
+(If the Debugger finds bugs, it routes back to the Backend Agent to begin the patching cascade. If max iterations are hit or zero bugs are found, it routes to the final Saver node).
 
 
 ---
 
 ## Setup Instructions
 
-Follow these steps to get the factory running on your local machine:
+The easiest way to run ArchitectAI is to download the standalone executable. No Python installation or virtual environment is required
+
+**Prerequisites:** You **must** have [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running on your machine, as the agents require it to sandbox and test the generated code.
+
+1. Navigate to the [Releases tab](../../releases) on GitHub.
+2. Download the `.zip` file for your operating system (Windows, macOS, or Linux).
+3. Extract the folder and launch the `ArchitectAI` application.
+   * ***Note for Mac/Linux Users:*** *Depending on your security settings, you may need to grant the file execution permissions. Open your terminal in the extracted folder and run: `chmod +x ArchitectAI`*
+4. Enter your Anthropic API Key in the Settings menu and start building
+
+---
+
+## Developer Setup (Run from Source)
 
 ### 1. Prerequisites
 * **Python 3.12** (WSL/Linux preferred).
@@ -87,9 +109,20 @@ pip install -r requirements.txt
 # Create a .env file in the root:
 ANTHROPIC_API_KEY=your_actual_key_here
 ```
-### 4. Running the Workflow
+(Note: You can also configure your API key directly inside the ArchitectAI Desktop GUI via Settings > Preferences).
+
+### 4. Running the Application
+#### Option A: The Desktop GUI (Recommended)
+Launch the ArchitectAI visual interface. This provides live streaming logs, file generation tracking, and Docker container management.
+
 ```bash
 python3 main.py
+```
+#### Option B: Headless CLI
+If you prefer to run the pipeline purely in the terminal and output to a debug file.
+```bash
+python3 main.py
+python run_live.py
 ```
 After the run completes, a debug_log.txt will be generated in the root which will trace the AI inputs/outputs. Check the output_prototype/ folder. You will find:
 
@@ -98,3 +131,10 @@ After the run completes, a debug_log.txt will be generated in the root which wil
 * architecture_plan.md
 * backend/
 * frontend/
+
+#### Building Executables Locally
+This project uses GitHub Actions to automatically compile the cross-platform releases. However, if you wish to build a standalone executable on your own machine, you can use the provided PyInstaller spec:
+```bash
+pip install pyinstaller
+pyinstaller architectai.spec
+```

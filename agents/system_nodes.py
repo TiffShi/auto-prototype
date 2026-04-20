@@ -3,8 +3,16 @@ from sandbox.executor import SandboxExecutor
 from core.utils import write_files_to_disk
 import os
 
-# --- UPDATED: FILE SAVER ---
+# --- FILE SAVER ---
 def file_saver_node(state: AutoPrototypeState) -> dict:
+    """
+    Finalizes the prototype generation by writing high-level artifacts to disk.
+    
+    Note: The actual application source code is flushed to disk by `write_files_to_disk` 
+    during the execution phase. This node acts as the final cleanup step, persisting 
+    the PM's architecture plan and generating a report for any lingering, unresolved bugs.
+    """
+
     print("Finalizing All Files")
     
     # Grab the dynamic path from the state
@@ -24,14 +32,21 @@ def file_saver_node(state: AutoPrototypeState) -> dict:
             
     return state
 
-# --- NEW: EXECUTION NODE ---
+# --- EXECUTION NODE ---
 def execution_node(state: AutoPrototypeState) -> dict:
+    """
+    Bridges the LangGraph in-memory state with the local filesystem to test the prototype.
+    
+    Flushes the current code strings to their respective files, boots the Docker Compose 
+    sandbox, and captures the standard output/error logs for the Debugger agent to evaluate.
+    """
+
     print("Execution Node: Testing Code in Sandbox")
     
-    # 1. Write the current state to disk so Docker can see it
+    # Write the current state to disk so Compose can build from the context
     write_files_to_disk(state)
     
-    # 2. Run the sandbox test (MUST PASS STATE HERE)
+    # Run the sandbox test and extract runtime logs
     sandbox = SandboxExecutor()
     logs = sandbox.test_prototype_and_get_logs(state) 
     

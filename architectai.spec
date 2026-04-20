@@ -1,4 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
+import sys
+
+# PyInstaller needs different file types for the physical executable icon
+if sys.platform == 'darwin':
+    icon_file = 'frontend/assets/logo.icns' # Mac requires .icns
+elif sys.platform == 'win32':
+    icon_file = 'frontend/assets/logo.ico'  # Windows requires .ico
+else:
+    icon_file = 'frontend/assets/logo.svg'  # Linux ignores this, but needs a valid path to not crash
 
 block_cipher = None
 
@@ -44,12 +53,12 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=True, # TIP: Keep this True while testing so you can see print() errors! Change to False later.
+    console=False, # TIP: Keep this True while testing so you can see print() errors! Change to False later.
     disable_windowed_traceback=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='frontend/assets/logo.ico'
+    icon=icon_file
 )
 
 coll = COLLECT(

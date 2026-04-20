@@ -5,14 +5,22 @@ from core.utils import apply_patches, safe_invoke
 
 # --- BACKEND AGENT ---
 def backend_agent_node(state: AutoPrototypeState) -> dict:
+    """
+    Orchestrates backend code generation or refinement based on the current iteration state.
+
+    If iteration > 0, it performs surgical bug fixes using a difference(DIFF)/patch strategy.
+    Otherwise, it generates the initial codebase from the architecture plan.
+    """
     iteration = state.get('iteration_count', 0)
     print(f"Backend Agent Active (Iteration {iteration})")
-    llm = ChatAnthropic(model="claude-sonnet-4-6", temperature=0.1)    
+    llm = ChatAnthropic(model="claude-sonnet-4-6", temperature=0.1)
 
     is_fix_mode = iteration > 0
     previous_code = state.get("backend_code", "")
 
     if is_fix_mode:
+        # Bug FIX MODE: Uses SEARCH/REPLACE blocks to minimize token usage and avoid rewriting
+        # the entire codebase, which prevents "lazy coding" omissions from the LLM
         system_prompt = "You are a Senior Backend Engineer fixing bugs."
         human_prompt = """TASK: SURGICAL BUG FIX (DIFF STRATEGY).
         You must fix the bugs identified by the QA Debugger in the existing code.
@@ -36,20 +44,23 @@ def backend_agent_node(state: AutoPrototypeState) -> dict:
         
         CRITICAL DOMAIN INSTRUCTION: You are the Backend Engineer. You must ONLY address the issues listed under "BACKEND ISSUES" in the debugger feedback. Ignore all "FRONTEND ISSUES".
         """
-        
+
         prompt = ChatPromptTemplate.from_messages([
             ("system", system_prompt), 
             ("human", human_prompt)
         ])
-        
+
         response = safe_invoke(prompt | llm, {
             "previous_code": previous_code,
             "feedback": state["error_messages"][-1]
         })
+
+        # Apply the SEARCH/REPLACE patches to the existing code string
         new_code = apply_patches(previous_code, response.content)
         return {"backend_code": new_code}
-        
+
     else:
+        # INITIAL BUILD: Generates a full implementation based on the selected tech stack
         stack_name = state.get("selected_stack_name", "Python/FastAPI")
         db_name = state.get("selected_db_name", "PostgreSQL")
 
@@ -70,7 +81,7 @@ def backend_agent_node(state: AutoPrototypeState) -> dict:
             ("system", system_prompt), 
             ("human", human_prompt)
         ])
-        
+
         response = safe_invoke(prompt | llm, {
             "plan": state.get('architecture_plan', '')
         })
