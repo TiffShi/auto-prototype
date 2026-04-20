@@ -71,3 +71,15 @@ coll = COLLECT(
     upx_exclude=[],
     name='ArchitectAI',
 )
+
+if sys.platform == 'darwin':
+    app = BUNDLE(
+        coll,
+        name='ArchitectAI.app',
+        icon='frontend/assets/logo.icns',
+        bundle_identifier='com.yourname.architectai',
+        info_plist={
+            'CFBundleShortVersionString': '1.0.2',
+            'LSMinimumSystemVersion': '10.13.0',
+        }
+    )
