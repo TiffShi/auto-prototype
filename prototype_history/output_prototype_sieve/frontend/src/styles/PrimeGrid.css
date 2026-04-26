@@ -1,0 +1,75 @@
+/* ─── Grid Container ────────────────────────────────────────────────────────── */
+.prime-grid-container {
+  margin-top: 1rem;
+}
+
+/* ─── Legend ────────────────────────────────────────────────────────────────── */
+.grid-legend {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.legend-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.swatch-prime {
+  background: var(--color-prime);
+  box-shadow: 0 0 6px rgba(124, 58, 237, 0.6);
+}
+
+.swatch-composite {
+  background: #374151;
+  border: 1px solid #4b5563;
+}
+
+.swatch-special {
+  background: var(--color-special);
+}
+
+/* ─── Grid ──────────────────────────────────────────────────────────────────── */
+.prime-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(46px, 1fr));
+  gap: 4px;
+  padding: 1.25rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Tighter grid for large limits */
+@media (max-width: 768px) {
+  .prime-grid {
+    grid-template-columns: repeat(auto-fill, minmax(38px, 1fr));
+    gap: 3px;
+    padding: 0.875rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .prime-grid {
+    grid-template-columns: repeat(auto-fill, minmax(32px, 1fr));
+    gap: 2px;
+    padding: 0.625rem;
+  }
+}

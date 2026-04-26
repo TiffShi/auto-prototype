@@ -1,0 +1,99 @@
+/* ─── Base Cell ─────────────────────────────────────────────────────────────── */
+.number-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  border-radius: 5px;
+  font-size: clamp(0.55rem, 1.2vw, 0.8125rem);
+  font-weight: 600;
+  font-family: var(--font);
+  cursor: default;
+  user-select: none;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  animation: cellFadeIn 0.3s ease both;
+  line-height: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Staggered animation via nth-child — groups of 50 */
+.number-cell:nth-child(50n + 1)  { animation-delay: 0.00s; }
+.number-cell:nth-child(50n + 2)  { animation-delay: 0.01s; }
+.number-cell:nth-child(50n + 3)  { animation-delay: 0.02s; }
+.number-cell:nth-child(50n + 4)  { animation-delay: 0.03s; }
+.number-cell:nth-child(50n + 5)  { animation-delay: 0.04s; }
+.number-cell:nth-child(50n + 6)  { animation-delay: 0.05s; }
+.number-cell:nth-child(50n + 7)  { animation-delay: 0.06s; }
+.number-cell:nth-child(50n + 8)  { animation-delay: 0.07s; }
+.number-cell:nth-child(50n + 9)  { animation-delay: 0.08s; }
+.number-cell:nth-child(50n + 10) { animation-delay: 0.09s; }
+
+@keyframes cellFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ─── Prime Cell ────────────────────────────────────────────────────────────── */
+.cell-prime {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.45);
+}
+
+.cell-prime:hover {
+  transform: scale(1.18);
+  box-shadow: 0 4px 16px rgba(124, 58, 237, 0.7);
+  z-index: 10;
+  position: relative;
+}
+
+/* ─── Composite Cell ────────────────────────────────────────────────────────── */
+.cell-composite {
+  background: #1e2235;
+  color: #4b5563;
+  border: 1px solid #2d3148;
+}
+
+.cell-composite:hover {
+  background: #252840;
+  color: #6b7280;
+  transform: scale(1.08);
+  z-index: 5;
+  position: relative;
+}
+
+/* ─── Special Cell (1) ──────────────────────────────────────────────────────── */
+.cell-special {
+  background: linear-gradient(135deg, #d97706, #b45309);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(217, 119, 6, 0.4);
+}
+
+.cell-special:hover {
+  transform: scale(1.18);
+  box-shadow: 0 4px 16px rgba(217, 119, 6, 0.6);
+  z-index: 10;
+  position: relative;
+}
+
+/* ─── Responsive font scaling ───────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .number-cell {
+    font-size: clamp(0.5rem, 2vw, 0.75rem);
+    border-radius: 4px;
+  }
+}
+
+@media (max-width: 480px) {
+  .number-cell {
+    font-size: clamp(0.45rem, 2.5vw, 0.65rem);
+    border-radius: 3px;
+  }
+}

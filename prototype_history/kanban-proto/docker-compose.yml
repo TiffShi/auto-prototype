@@ -1,0 +1,60 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kanban
+      POSTGRES_PASSWORD: kanban
+      POSTGRES_DB: kanbandb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/1-schema.sql
+      - ./database/seed.sql:/docker-entrypoint-initdb.d/2-seed.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kanban -d kanbandb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - kanban_net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgresql://kanban:kanban@db:5432/kanbandb
+      JWT_SECRET: supersecretkey
+      JWT_ALGORITHM: HS256
+      JWT_EXPIRE_MINUTES: 1440
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - kanban_net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_BASE_URL: http://localhost:8080
+    depends_on:
+      - backend
+    networks:
+      - kanban_net
+
+volumes:
+  postgres_data:
+
+networks:
+  kanban_net:
+    driver: bridge
