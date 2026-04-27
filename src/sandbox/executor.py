@@ -113,19 +113,6 @@ class SandboxExecutor:
         if infra_code:
             self._parse_and_write_multifile_blocks(infra_code, target_dir)
 
-        # # Backward compatibility with the old single-container flow
-        # dockerfile_content = state.get("dockerfile_content")
-        # startup_script_content = state.get("startup_script_content")
-
-        # if dockerfile_content:
-        #     with open(os.path.join(target_dir, "Dockerfile"), "w", newline="\n", encoding="utf-8") as f:
-        #         f.write(dockerfile_content.rstrip() + "\n")
-
-        # if startup_script_content:
-        #     script_path = os.path.join(target_dir, "startup.sh")
-        #     with open(script_path, "w", newline="\n", encoding="utf-8") as f:
-        #         f.write(startup_script_content.rstrip() + "\n")
-
     def _compose_file_exists(self, target_dir: str) -> bool:
         return (
             os.path.exists(os.path.join(target_dir, "docker-compose.yml"))
@@ -188,42 +175,6 @@ class SandboxExecutor:
             )
 
         return "\n\n".join(sections)
-
-    # def build_prototype_image(self, target_dir: str = None):
-    #     """
-    #     For live usage, build the compose project if docker-compose.yml exists.
-    #     Otherwise fall back to single Dockerfile build behavior.
-
-    #     This keeps run_live.py from exploding immediately if you have not
-    #     updated every caller yet.
-    #     """
-    #     target_dir = target_dir or os.path.join(self.project_root, "output_prototype")
-
-    #     if self._compose_file_exists(target_dir):
-    #         compose_cmd = self._docker_compose_cmd()
-    #         project_name = f"{self.default_project_name}_{uuid.uuid4().hex[:6]}"
-
-    #         print(f"Building compose project from {target_dir}...")
-    #         result = self._run_subprocess(
-    #             compose_cmd + ["-p", project_name, "build"],
-    #             cwd=target_dir,
-    #             timeout=600
-    #         )
-
-    #         if result.returncode != 0:
-    #             raise RuntimeError(
-    #                 "Compose build failed.\n\n"
-    #                 f"STDOUT:\n{result.stdout}\n\nSTDERR:\n{result.stderr}"
-    #             )
-
-    #         print("Compose project built successfully.")
-    #         return
-
-    #     # Legacy fallback
-    #     print(
-    #         "No docker-compose.yml found. This executor is now Compose-first.\n"
-    #         "If you still need legacy single-container live mode, update your runtime flow."
-    #     )
 
     def run_prototype(self):
         """Detached launcher for manually testing a successfully generated application."""

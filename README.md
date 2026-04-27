@@ -30,8 +30,6 @@ auto-prototype/
 │   └── sandbox/              # The Execution Engine
 │       └── executor.py       # Docker Compose Python SDK integration 
 ├── requirements.txt          # Project dependencies
-├── architectai.spec          # PyInstaller spec for building standalone executables
-├── installer.iss             # Inno Setup script for creating Windows installers
 ├── run_gui.py                # ENTRY POINT 1: Launch the PyQt6 Desktop UI
 ├── run_cli.py                # ENTRY POINT 2: CLI / Headless run 
 └── README.md                 # Project overview
