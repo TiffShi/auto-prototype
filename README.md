@@ -2,11 +2,7 @@
 
 **Project Goal:** To build a fully autonomous, multi-agent workflow that transforms a natural language idea into a functional, multi-file software prototype. AutoPrototype dynamically selects tech stacks (e.g., React, FastAPI, Spring Boot) and writes, tests, and self-corrects its own code.
 
-## Current Project Status: Multi-Service Orchestration & Desktop GUI
-The system has been refactored for realism, scalability, and usability. 
-* **Docker Compose Integration:** The DevOps agent now provisions a true microservice architecture, splitting the frontend, backend, database, and storage (MinIO) into isolated, networked containers.
-* **Data Infrastructure Agent:** A dedicated Data Agent now handles SQL schema generation, idempotent data seeding, and object storage bucket policies. 
-* **ArchitectAI GUI:** A rich PyQt6 desktop application now serves as the primary interface, featuring real-time log streaming, pipeline progress tracking, a dynamic file tree view, and live Docker container monitoring.
+## Current Project Status: Finished
 
 ## Technical Architecture: How it Works
 
@@ -14,36 +10,31 @@ AutoPrototype is a **State Machine** built with **LangGraph**. It mimics a real-
 
 ```bash
 auto-prototype/
-├── agents/                   # Isolated AI Agent roles
-│   ├── pm_agent.py           # Product Manager (Architecture, Stack & Storage Selection)
-│   ├── backend_agent.py      # Backend Developer (Code Generation & Patching)
-│   ├── frontend_agent.py     # Frontend Developer (Code Generation & Patching)
-│   ├── data_agent.py         # Data Engineer (DB Schemas, Seeding, MinIO Buckets)
-│   ├── devops_agent.py       # Infrastructure (Generates Docker Compose & Dockerfiles)
-│   ├── debugger_agent.py     # QA/Tech Lead (Analyzes multi-service runtime logs)
-│   └── system_nodes.py       # Deterministic nodes (Code Execution & File Saving)
-├── core/                     # LangGraph Orchestration
-│   ├── graph.py              # State Machine & Edge routing definitions
-│   ├── state.py              # Shared "Whiteboard" (AutoPrototypeState)
-│   └── utils.py              # Helper functions (Surgical Diff patching, File I/O)
-├── frontend/                 # Desktop Application (ArchitectAI)
-│   ├── main.py               # ENTRY POINT 1: The PyQt6 Desktop UI
-│   ├── ui_architectai.py     # Compiled UI layout
-│   └── assets/               # SVGs and Icons
-├── sandbox/                  # The Execution Engine
-│   └── executor.py           # Docker Compose Python SDK integration 
-├── output_prototype/         # THE GENERATED PRODUCT (AI-Built)
-│   ├── architecture_plan.md
-│   ├── docker-compose.yml    # AI-generated orchestration
-│   ├── backend/              # Source code + backend Dockerfile
-│   ├── frontend/             # Source code + frontend Dockerfile
-│   ├── database/             # SQL schemas, seed data, and init scripts
-│   └── bucket/               # MinIO initialization scripts (if storage requested)
-├── .env                      # API Keys (Anthropic)
+├── src/
+│   ├── agents/               # Isolated AI Agent roles
+│   │   ├── pm_agent.py       # Product Manager (Architecture, Stack & Storage Selection)
+│   │   ├── backend_agent.py  # Backend Developer (Code Generation & Patching)
+│   │   ├── frontend_agent.py # Frontend Developer (Code Generation & Patching)
+│   │   ├── data_agent.py     # Data Engineer (DB Schemas, Seeding, MinIO Buckets)
+│   │   ├── devops_agent.py   # Infrastructure (Generates Docker Compose & Dockerfiles)
+│   │   ├── debugger_agent.py # QA/Tech Lead (Analyzes multi-service runtime logs)
+│   │   └── system_nodes.py   # Deterministic nodes (Code Execution & File Saving)
+│   ├── core/                 # LangGraph Orchestration
+│   │   ├── graph.py          # State Machine & Edge routing definitions
+│   │   ├── state.py          # Shared "Whiteboard" (AutoPrototypeState)
+│   │   └── utils.py          # Helper functions (Surgical Diff patching, File I/O)
+│   ├── gui/                  # Desktop Application (ArchitectAI)
+│   │   ├── main_window.py    # Main window logic
+│   │   ├── ui_autoprototype.py # Compiled UI layout
+│   │   └── assets/           # SVGs and Icons
+│   └── sandbox/              # The Execution Engine
+│       └── executor.py       # Docker Compose Python SDK integration 
 ├── requirements.txt          # Project dependencies
 ├── architectai.spec          # PyInstaller spec for building standalone executables
-├── main.py                   # ENTRY POINT 2: CLI / Headless run 
-└── README.md                 # Project overview```
+├── installer.iss             # Inno Setup script for creating Windows installers
+├── run_gui.py                # ENTRY POINT 1: Launch the PyQt6 Desktop UI
+├── run_cli.py                # ENTRY POINT 2: CLI / Headless run 
+└── README.md                 # Project overview
 ```
 
 ### 1. The Shared State (`core/state.py`)
@@ -71,24 +62,7 @@ The flow is orchestrated as a directed relay with a conditional self-correction 
 
 (If the Debugger finds bugs, it routes back to the Backend Agent to begin the patching cascade. If max iterations are hit or zero bugs are found, it routes to the final Saver node).
 
-
----
-
-## Setup Instructions
-
-The easiest way to run ArchitectAI is to download the standalone executable. No Python installation or virtual environment is required
-
-**Prerequisites:** You **must** have [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running on your machine, as the agents require it to sandbox and test the generated code.
-
-1. Navigate to the [Releases tab](../../releases) on GitHub.
-2. Download the `.zip` file for your operating system (Windows, macOS, or Linux).
-3. Extract the folder and launch the `ArchitectAI` application.
-   * ***Note for Mac/Linux Users:*** *Depending on your security settings, you may need to grant the file execution permissions. Open your terminal in the extracted folder and run: `chmod +x ArchitectAI`*
-4. Enter your Anthropic API Key in the Settings menu and start building
-
----
-
-## Developer Setup (Run from Source)
+## Setup Instructions (Run from Source)
 
 ### 1. Prerequisites
 * **Python 3.12** (WSL/Linux preferred).
@@ -96,6 +70,9 @@ The easiest way to run ArchitectAI is to download the standalone executable. No 
 * **Antropic API Key** (for Claude 3.5 Sonnet).
 
 ### 2. Installation
+
+Nagivate to the root of the project and run:
+
 ```bash
 # Create and activate virtual environment
 python3 -m venv .venv
@@ -105,36 +82,23 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 ### 3. Environment Variables
-```bash
-# Create a .env file in the root:
-ANTHROPIC_API_KEY=your_actual_key_here
-```
-(Note: You can also configure your API key directly inside the ArchitectAI Desktop GUI via Settings > Preferences).
+
+You can configure your API key directly inside the AutoPrototype Desktop GUI via Settings > Preferences
 
 ### 4. Running the Application
-#### Option A: The Desktop GUI (Recommended)
-Launch the ArchitectAI visual interface. This provides live streaming logs, file generation tracking, and Docker container management.
+#### The Desktop GUI 
+Launch the AutoPrototype visual interface. This provides live streaming logs, file generation tracking, and Docker container management.
 
 ```bash
-python3 main.py
+python3 run_gui.py
 ```
-#### Option B: Headless CLI
-If you prefer to run the pipeline purely in the terminal and output to a debug file.
-```bash
-python3 main.py
-python run_live.py
-```
-After the run completes, a debug_log.txt will be generated in the root which will trace the AI inputs/outputs. Check the output_prototype/ folder. You will find:
+After the run completes, check the prototype output directory folder. You will find:
 
-* startup.sh
-* Dockerfile
+* docker-compose.yml
+* pipeline_execution.log
 * architecture_plan.md
 * backend/
 * frontend/
-
-#### Building Executables Locally
-This project uses GitHub Actions to automatically compile the cross-platform releases. However, if you wish to build a standalone executable on your own machine, you can use the provided PyInstaller spec:
-```bash
-pip install pyinstaller
-pyinstaller architectai.spec
-```
+* database/ (if any database was selected)
+* bucket/ (if any bucket was selected)
+* unresolved_bugs.md (if any bugs weren't resolved)

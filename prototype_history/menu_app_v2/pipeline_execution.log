@@ -1,0 +1,59 @@
+=== AUTOPROTOTYPE EXECUTION LOG ===
+Started: 2026-04-26 21:07:31
+===================================
+
+[21:07:31] [PM]       Product Manager Agent Active
+[21:07:58] [PM]        -> Selected Frontend/Backend: React/FastAPI
+[21:07:58] [PM]        -> Selected Database: PostgreSQL
+[21:07:58] [PM]        -> Storage Required: True
+[21:07:58] [PM]        -> Architecture plan generated.
+[21:07:58] [BACKEND]  Backend Agent Active (Iteration 0)
+[21:09:50] [BACKEND]  Backend Agent Finished (Iteration 0)
+[21:09:50] [FRONTEND] Frontend Agent Active (Iteration 0)
+[21:12:57] [FRONTEND] Frontend Agent Finished (Iteration 0)
+[21:12:57] [DATA]     Data Agent Active (Iteration 0)
+[21:14:32] [DATA]     Data Agent Finished (bucket_needed=True)
+[21:14:32] [DEVOPS]   DevOps Agent Active
+[21:14:40] [DEVOPS]   DevOps Agent Finished
+[21:14:40] [EXEC]     Execution Node: Testing Code in Sandbox
+[21:14:40] [EXEC]      -> Executor: Starting compose test run from /mnt/c/Agentic/auto-prototype/prototype_history/menu_app_v2...
+[21:15:24] [EXEC]      -> Executor: Compose services started. Waiting 12 seconds for startup...
+[21:15:40] [EXEC]      -> Executor: Logs captured. Tearing down compose project...
+[21:15:44] [DEBUG]    Debugger Agent Active (Analyzing Logs)
+[21:15:55] [DEBUG]    Debugger Output: VERDICT: FAIL
+[21:15:55] [DEBUG]    BACKEND ISSUES:
+[21:15:55] [DEBUG]    The backend crashes at startup with a `ValueError: Unknown constraint decimal_places` in Pydantic v2. The `decimal_plac...
+[21:15:55] [DEBUG]    Router: Bugs found. Analyzing feedback to route to the earliest required agent...
+[21:15:55] [DEBUG]     -> Routing to Backend Agent
+[21:15:55] [DEBUG]    Router: Bugs found. Analyzing feedback to route to the earliest required agent...
+[21:15:55] [DEBUG]     -> Routing to Backend Agent
+[21:15:55] [SYSTEM]   Dynamic loop detected. Routing back to Backend (Iteration 1).
+[21:15:55] [BACKEND]  Backend Agent Active (Iteration 1)
+[21:15:58] [BACKEND]  Applied 2 patches successfully.
+[21:15:58] [FRONTEND] Frontend Agent Active (Iteration 1)
+[21:16:01] [FRONTEND] Applied 0 patches successfully.
+[21:16:01] [DATA]     Data Agent Active (Iteration 1)
+[21:16:03] [DATA]     Applied 0 patches successfully.
+[21:16:03] [DEVOPS]   DevOps Agent Active
+[21:16:15] [DEVOPS]   DevOps Agent Finished
+[21:16:15] [EXEC]     Execution Node: Testing Code in Sandbox
+[21:16:15] [EXEC]      -> Executor: Starting compose test run from /mnt/c/Agentic/auto-prototype/prototype_history/menu_app_v2...
+[21:16:29] [EXEC]      -> Executor: Compose services started. Waiting 12 seconds for startup...
+[21:16:44] [EXEC]      -> Executor: Logs captured. Tearing down compose project...
+[21:16:48] [DEBUG]    Debugger Agent Active (Analyzing Logs)
+[21:16:51] [DEBUG]    Debugger Output: VERDICT: PASS
+[21:16:51] [DEBUG]    BACKEND ISSUES:
+[21:16:51] [DEBUG]    None
+[21:16:51] [DEBUG]    FRONTEND ISSUES:
+[21:16:51] [DEBUG]    None
+[21:16:51] [DEBUG]    DATABASE ISSUES:
+[21:16:51] [DEBUG]    None
+[21:16:51] [DEBUG]    BUCKET ISSUES:
+[21:16:51] [DEBUG]    None
+[21:16:51] [DEBUG]    DEVOPS ISSUES:
+[21:16:51] [DEBUG]    None
+[21:16:51] [DEBUG]    INTEGRATION ISSUES:
+[21:16:51] [DEBUG]    None...
+[21:16:51] [DEBUG]    Router: QA Passed. Proceeding to save.
+[21:16:51] [DEBUG]    Router: QA Passed. Proceeding to save.
+[21:16:51] [SAVER]    Finalizing All Files
