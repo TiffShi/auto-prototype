@@ -71,7 +71,7 @@ The flow is orchestrated as a directed relay with a conditional self-correction 
 
 ### 2. Installation
 
-Nagivate to the root of the project and run:
+Clone the repo then nagivate to the root of the project and run:
 
 ```bash
 # Create and activate virtual environment
@@ -102,3 +102,10 @@ After the run completes, check the prototype output directory folder. You will f
 * database/ (if any database was selected)
 * bucket/ (if any bucket was selected)
 * unresolved_bugs.md (if any bugs weren't resolved)
+
+## How to Use
+* Make sure to have docker running.
+* Input your Anthropic API key in the Settings menu.
+* Enter your idea in the prompt field.
+* Start the pipeline by clicking RUN PIPELINE button. Will ask for you to name the project and select the output directory for all prototypes.
+* Launch/Destroy Buttons will allow you to select the prototype directory to launch/destroy.
