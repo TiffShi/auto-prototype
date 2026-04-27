@@ -81,6 +81,9 @@ The flow is orchestrated as a directed relay with a conditional self-correction 
 * **Antropic API Key** (for Claude 3.5 Sonnet).
 
 ### 2. Installation
+
+Nagivate to the root of the project and run:
+
 ```bash
 # Create and activate virtual environment
 python3 -m venv .venv
@@ -94,7 +97,7 @@ pip install -r requirements.txt
 You can configure your API key directly inside the AutoPrototype Desktop GUI via Settings > Preferences
 
 ### 4. Running the Application
-#### Option A: The Desktop GUI (Recommended)
+#### The Desktop GUI 
 Launch the AutoPrototype visual interface. This provides live streaming logs, file generation tracking, and Docker container management.
 
 ```bash
