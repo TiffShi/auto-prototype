@@ -1,0 +1,10 @@
+Evaluation:
+
+Prompt:
+Build a menu website where the owners can customize their own menu for use.
+
+Auto-Prototype:
+
+Cursor:
+
+Claude Code:
